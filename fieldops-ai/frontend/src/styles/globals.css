@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base Reset & Design Tokens ─────────────────────────────────────────────── */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-slate-50 font-sans text-slate-800 antialiased;
+    min-height: 100vh;
+  }
+
+  /* ── Custom scrollbar ── */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-slate-300;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400;
+  }
+
+  /* ── Selection ── */
+  ::selection {
+    @apply bg-blue-500/20 text-blue-900;
+  }
+
+  /* ── Focus visible ── */
+  :focus-visible {
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2 ring-offset-white;
+  }
+
+  /* ── Typography defaults ── */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-bold tracking-tight text-slate-900;
+  }
+
+  p {
+    @apply leading-relaxed text-slate-600;
+  }
+
+  a {
+    @apply text-blue-600 transition-colors duration-200 hover:text-blue-700;
+  }
+
+  code {
+    @apply rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 font-mono text-xs text-slate-800;
+  }
+}
+
+/* ── Component Classes ──────────────────────────────────────────────────────── */
+@layer components {
+  /* Clean White Card */
+  .glass-card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-xs;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent;
+  }
+
+  /* Status dot */
+  .status-dot {
+    @apply inline-block h-2 w-2 rounded-full;
+  }
+
+  .status-dot--healthy {
+    @apply bg-emerald-500;
+  }
+  .status-dot--warning {
+    @apply bg-amber-500;
+  }
+  .status-dot--danger {
+    @apply bg-rose-500;
+  }
+}
+
+/* ── Utility Overrides ──────────────────────────────────────────────────────── */
+@layer utilities {
+  .text-shadow-brand {
+    text-shadow: 0 0 20px rgba(37, 99, 235, 0.15);
+  }
+
+  .noise-overlay {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.015'/%3E%3C/svg%3E");
+  }
+}

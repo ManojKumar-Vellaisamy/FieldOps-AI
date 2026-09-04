@@ -1,0 +1,139 @@
+# ──────────────────────────────────────────────
+# FieldOps AI – Root .gitignore
+# ──────────────────────────────────────────────
+
+# ── OS ────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ── IDEs / Editors ────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.code-workspace
+
+# ── Environment variables / Secrets ───────────
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ── Node / Frontend ───────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.cache/
+frontend/coverage/
+frontend/.vite/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ── Python / Backend ──────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ── Virtual Environments ──────────────────────
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+.virtualenv/
+
+# ── Databases / Local Database Files ──────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Logs ──────────────────────────────────────
+logs/
+*.log
+
+# ── Testing ───────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+
+# ── Alembic ───────────────────────────────────
+# IMPORTANT:
+# Do NOT ignore backend/alembic/versions/
+# Migration files are part of the project source
+# and should normally be committed to Git.
+
+# ── Misc ──────────────────────────────────────
+*.bak
+*.tmp
+*.temp
+.turbo/
+
+# ── Local caches ──────────────────────────────
+.cache/
+.parcel-cache/
+.eslintcache/
+
+# ── Build / generated files ───────────────────
+*.map
+*.tsbuildinfo
+
+# ── Temporary files ───────────────────────────
+*.orig
+*.rej
+*.swp
+*~
+
+# ── Python tooling ────────────────────────────
+.mypy_cache/
+.pyright/
+.ruff_cache/
+
+# ── Coverage / reports ────────────────────────
+coverage/
+reports/coverage/
