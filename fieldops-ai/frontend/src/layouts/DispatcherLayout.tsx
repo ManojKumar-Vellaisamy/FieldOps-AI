@@ -16,7 +16,7 @@ import { Navbar } from '@/components/ui/Navbar';
 import { RoleGuard } from '@/guards/RoleGuard';
 import { cn } from '@/utils/cn';
 
-const DISPATCHER_NAVIGATION: NavSection[] = [
+export const DISPATCHER_NAVIGATION: NavSection[] = [
   {
     title: 'Overview',
     items: [

@@ -2,10 +2,11 @@
 Technician ORM model.
 """
 
+from datetime import datetime
 import uuid
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Float, ForeignKey, Integer, String
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -40,6 +41,9 @@ class Technician(Base, UUIDMixin, TimestampMixin):
     availability_status: Mapped[str] = mapped_column(String(50), default="AVAILABLE", nullable=False)
     current_latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     current_longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    location_updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="technician")

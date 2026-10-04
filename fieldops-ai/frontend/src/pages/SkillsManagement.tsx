@@ -29,7 +29,21 @@ import type {
 import { cn } from '@/utils/cn';
 import { formatDate } from '@/utils/format';
 
-const CATEGORIES = ['ALL', 'HVAC', 'Electrical', 'Telecommunications', 'Network', 'Calibration'];
+const CATEGORIES = [
+  'ALL',
+  'HVAC',
+  'Electrical',
+  'Telecommunications',
+  'Network',
+  'Calibration',
+  'Plumbing & Piping',
+  'Refrigeration',
+  'Fire & Life Safety',
+  'Security & Surveillance',
+  'Renewable Energy',
+  'Industrial Automation',
+  'Mechanical Systems',
+];
 
 export default function SkillsManagement() {
   const { user } = useAuth();

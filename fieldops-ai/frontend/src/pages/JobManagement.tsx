@@ -36,7 +36,11 @@ import type { Skill } from '@/types/skill.types';
 import type { AssignmentRecommendationResponse } from '@/types/assignment.types';
 import { cn } from '@/utils/cn';
 import { formatDate } from '@/utils/format';
+import { parseApiError } from '@/utils/error';
+import type { FormErrorState } from '@/utils/error';
 import { TechnicianETACard } from '@/components/dashboard/TechnicianETACard';
+import { RealtimeConnectionBadge } from '@/components/common/RealtimeConnectionBadge';
+import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 
 const PRIORITIES: Priority[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
@@ -115,7 +119,8 @@ export default function JobManagement() {
     service_instructions: '',
   });
 
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<FormErrorState | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const triggerNotice = (type: 'success' | 'error', message: string) => {
     setNotice({ type, message });
@@ -171,6 +176,23 @@ export default function JobManagement() {
     loadJobs();
   }, [loadJobs]);
 
+  // Operational real-time synchronization for dispatch updates
+  useRealtimeSync(
+    [
+      'JOB_ASSIGNED',
+      'JOB_UNASSIGNED',
+      'JOB_STATUS_CHANGED',
+      'JOB_COMPLETED',
+      'JOB_CANCELLED',
+      'DISPATCH_PLAN_CHANGED',
+      'TECHNICIAN_AVAILABILITY_CHANGED',
+    ],
+    () => {
+      loadJobs();
+    },
+    loadJobs,
+  );
+
   // Derived Operational Summary Metrics
   const summaryMetrics = useMemo(() => {
     const unassignedCount = jobs.filter((j) => j.status === 'NEW' || !j.assigned_technician).length;
@@ -205,11 +227,7 @@ export default function JobManagement() {
       setRecommendation(data);
     } catch (err: any) {
       console.error('Failed to load assignment recommendation', err);
-      const msg =
-        err?.response?.data?.error?.message ||
-        err?.response?.data?.detail ||
-        'Failed to calculate assignment recommendations.';
-      setFormError(msg);
+      setFormError(parseApiError(err, 'Failed to calculate assignment recommendations.'));
     } finally {
       setIsAssignLoading(false);
     }
@@ -228,11 +246,9 @@ export default function JobManagement() {
       loadJobs();
     } catch (err: any) {
       console.error('Assignment confirmation error', err);
-      const msg =
-        err?.response?.data?.error?.message ||
-        err?.response?.data?.detail ||
-        'Technician is no longer available. Please refresh recommendations.';
-      setFormError(msg);
+      setFormError(
+        parseApiError(err, 'Technician is no longer available. Please refresh recommendations.')
+      );
     } finally {
       setIsConfirmingTechId(null);
     }
@@ -260,12 +276,84 @@ export default function JobManagement() {
   // Form Handlers
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setFormError(null);
+
+    // Client-side validation using existing form state architecture
+    const cleanCustomerName = addForm.customer_name.trim();
+    if (!cleanCustomerName || cleanCustomerName.length < 2) {
+      setFormError({
+        title: 'Unable to create job',
+        messages: ['Customer name must have at least 2 characters.'],
+      });
+      return;
+    }
+
+    const cleanAddress = addForm.address.trim();
+    if (!cleanAddress || cleanAddress.length < 2) {
+      setFormError({
+        title: 'Unable to create job',
+        messages: ['Address must have at least 2 characters.'],
+      });
+      return;
+    }
+
+    const lat = Number(addForm.latitude);
+    if (isNaN(lat) || lat < -90 || lat > 90) {
+      setFormError({
+        title: 'Unable to create job',
+        messages: ['Latitude must be between -90 and 90.'],
+      });
+      return;
+    }
+
+    const lng = Number(addForm.longitude);
+    if (isNaN(lng) || lng < -180 || lng > 180) {
+      setFormError({
+        title: 'Unable to create job',
+        messages: ['Longitude must be between -180 and 180.'],
+      });
+      return;
+    }
+
+    if (!addForm.required_skill_id || !addForm.required_skill_id.trim()) {
+      setFormError({
+        title: 'Unable to create job',
+        messages: ['Required skill is required.'],
+      });
+      return;
+    }
+
+    let formattedScheduledTime: string | undefined = undefined;
+    if (addForm.scheduled_time && addForm.scheduled_time.trim()) {
+      const parsedDate = new Date(addForm.scheduled_time);
+      if (isNaN(parsedDate.getTime())) {
+        setFormError({
+          title: 'Unable to create job',
+          messages: ['Scheduled time must be a valid date and time.'],
+        });
+        return;
+      }
+      formattedScheduledTime = parsedDate.toISOString();
+    }
+
+    const rawInstructions = (addForm.service_instructions?.trim() || addForm.description?.trim()) || undefined;
+
+    const payload: JobCreatePayload = {
+      customer_name: cleanCustomerName,
+      customer_phone: addForm.customer_phone?.trim() || undefined,
+      address: cleanAddress,
+      latitude: lat,
+      longitude: lng,
+      required_skill_id: addForm.required_skill_id.trim(),
+      priority: addForm.priority || 'MEDIUM',
+      scheduled_time: formattedScheduledTime,
+      description: rawInstructions,
+      service_instructions: rawInstructions,
+    };
+
+    setIsSubmitting(true);
     try {
-      const payload: JobCreatePayload = {
-        ...addForm,
-        description: addForm.service_instructions || addForm.description,
-      };
       const created = await jobService.createJob(payload);
       triggerNotice('success', `Job ${created.job_number} created successfully.`);
       setIsAddModalOpen(false);
@@ -283,40 +371,114 @@ export default function JobManagement() {
       });
       loadJobs();
     } catch (err: any) {
-      const msg =
-        err?.response?.data?.error?.message || err?.response?.data?.detail || 'Failed to create job.';
-      setFormError(msg);
+      setFormError(parseApiError(err, 'Unable to create job'));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editJob) return;
+    if (!editJob || isSubmitting) return;
     setFormError(null);
+
+    const cleanCustomerName = editForm.customer_name?.trim();
+    if (!cleanCustomerName || cleanCustomerName.length < 2) {
+      setFormError({
+        title: 'Unable to update job',
+        messages: ['Customer name must have at least 2 characters.'],
+      });
+      return;
+    }
+
+    const cleanAddress = editForm.address?.trim();
+    if (!cleanAddress || cleanAddress.length < 5) {
+      setFormError({
+        title: 'Unable to update job',
+        messages: ['Address must have at least 5 characters.'],
+      });
+      return;
+    }
+
+    const lat = editForm.latitude !== undefined ? Number(editForm.latitude) : undefined;
+    if (lat !== undefined && (isNaN(lat) || lat < -90 || lat > 90)) {
+      setFormError({
+        title: 'Unable to update job',
+        messages: ['Latitude must be between -90 and 90.'],
+      });
+      return;
+    }
+
+    const lng = editForm.longitude !== undefined ? Number(editForm.longitude) : undefined;
+    if (lng !== undefined && (isNaN(lng) || lng < -180 || lng > 180)) {
+      setFormError({
+        title: 'Unable to update job',
+        messages: ['Longitude must be between -180 and 180.'],
+      });
+      return;
+    }
+
+    if (!editForm.required_skill_id || !editForm.required_skill_id.trim()) {
+      setFormError({
+        title: 'Unable to update job',
+        messages: ['Required skill is required.'],
+      });
+      return;
+    }
+
+    let formattedScheduledTime: string | undefined = undefined;
+    if (editForm.scheduled_time && editForm.scheduled_time.trim()) {
+      const parsedDate = new Date(editForm.scheduled_time);
+      if (isNaN(parsedDate.getTime())) {
+        setFormError({
+          title: 'Unable to update job',
+          messages: ['Scheduled time must be a valid date and time.'],
+        });
+        return;
+      }
+      formattedScheduledTime = parsedDate.toISOString();
+    }
+
+    const rawInstructions = (editForm.service_instructions?.trim() || editForm.description?.trim()) || undefined;
+
+    const payload: JobUpdatePayload = {
+      customer_name: cleanCustomerName,
+      customer_phone: editForm.customer_phone?.trim() || undefined,
+      address: cleanAddress,
+      latitude: lat,
+      longitude: lng,
+      required_skill_id: editForm.required_skill_id.trim(),
+      priority: editForm.priority,
+      scheduled_time: formattedScheduledTime,
+      description: rawInstructions,
+      service_instructions: rawInstructions,
+    };
+
+    setIsSubmitting(true);
     try {
-      const payload: JobUpdatePayload = {
-        ...editForm,
-        description: editForm.service_instructions || editForm.description,
-      };
       await jobService.updateJob(editJob.id, payload);
       triggerNotice('success', `Job ${editJob.job_number} updated successfully.`);
       setEditJob(null);
       loadJobs();
     } catch (err: any) {
-      const msg =
-        err?.response?.data?.error?.message || err?.response?.data?.detail || 'Failed to update job.';
-      setFormError(msg);
+      setFormError(parseApiError(err, 'Unable to update job'));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleCancelSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!cancelJobTarget) return;
+    if (!cancelJobTarget || isSubmitting) return;
     if (!cancelReason.trim()) {
-      setFormError('A non-empty cancellation reason is required.');
+      setFormError({
+        title: 'Validation Error',
+        messages: ['A non-empty cancellation reason is required.'],
+      });
       return;
     }
     setFormError(null);
+    setIsSubmitting(true);
     try {
       await jobService.cancelJob(cancelJobTarget.id, cancelReason.trim());
       triggerNotice('success', `Job ${cancelJobTarget.job_number} cancelled.`);
@@ -324,12 +486,17 @@ export default function JobManagement() {
       setCancelReason('');
       loadJobs();
     } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || 'Failed to cancel job.';
-      setFormError(msg);
+      setFormError(parseApiError(err, 'Failed to cancel job'));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const openEditModal = (job: Job) => {
+    if (job.status === 'COMPLETED' || job.status === 'CANCELLED') {
+      triggerNotice('error', `Cannot edit a ${job.status.toLowerCase()} job order.`);
+      return;
+    }
     setEditJob(job);
     setEditForm({
       customer_name: job.customer_name,
@@ -429,6 +596,7 @@ export default function JobManagement() {
               <Shield className="h-3 w-3 text-purple-600" />
               <span>{user?.role || 'User'}</span>
             </span>
+            <RealtimeConnectionBadge />
           </div>
 
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-slate-900">
@@ -864,7 +1032,7 @@ export default function JobManagement() {
                               </button>
                             )}
 
-                            {job.status !== 'CANCELLED' && (
+                            {job.status !== 'CANCELLED' && job.status !== 'COMPLETED' && (
                               <>
                                 <button
                                   onClick={() => openEditModal(job)}
@@ -1161,76 +1329,96 @@ export default function JobManagement() {
               )}
             </div>
 
-            {/* ── Operational Attention & Assignment Experience ── */}
-            {viewJob.status === 'NEW' || !viewJob.assigned_technician ? (
-              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            {viewJob.status === 'COMPLETED' ? (
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <UserX className="h-6 w-6 text-amber-600 shrink-0" />
+                  <CheckCircle2 className="h-6 w-6 text-emerald-600 shrink-0" />
                   <div>
-                    <div className="font-bold text-amber-800 text-xs">
-                      Awaiting Technician Assignment
-                    </div>
-                    <div className="text-[11px] text-slate-600">
-                      Job is currently NEW and unassigned in the operational queue.
-                    </div>
-                  </div>
-                </div>
-
-                {isDispatcher && (
-                  <button
-                    onClick={() => {
-                      setViewJob(null);
-                      openSmartAssignmentModal(viewJob);
-                    }}
-                    className="flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 active:scale-95 transition-all shrink-0 cursor-pointer"
-                  >
-                    <Sparkles className="h-4 w-4 text-amber-300" />
-                    <span>Smart Assignment</span>
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <UserCheck className="h-6 w-6 text-emerald-600 shrink-0" />
-                  <div>
-                    <div className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                      <span>{viewJob.assigned_technician.full_name}</span>
-                      <span className="text-xs font-mono text-emerald-700 font-semibold">
-                        ({viewJob.assigned_technician.employee_code})
-                      </span>
+                    <div className="font-bold text-emerald-900 text-sm flex items-center gap-2">
+                      <span>Service Order Completed</span>
+                      {viewJob.assigned_technician && (
+                        <span className="text-xs font-mono text-emerald-700 font-semibold">
+                          ({viewJob.assigned_technician.full_name} • {viewJob.assigned_technician.employee_code})
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-slate-600 flex items-center gap-3 mt-0.5">
-                      <span>
-                        Required Skill:{' '}
-                        <strong className="text-purple-700 font-semibold">
-                          {viewJob.required_skill?.skill_name || 'Certified'}
-                        </strong>
-                      </span>
-                      <span>•</span>
-                      <span>
-                        Current Execution:{' '}
-                        <strong className="text-blue-700 font-bold">
-                          ● {getStatusDisplayLabel(viewJob.status)}
-                        </strong>
-                      </span>
+                      <span>Service resolved and verified. No further operational dispatch actions required.</span>
                     </div>
                   </div>
                 </div>
-
-                {isDispatcher && viewJob.status === 'ASSIGNED' && (
-                  <button
-                    onClick={() => {
-                      setViewJob(null);
-                      setUnassignJobTarget(viewJob);
-                    }}
-                    className="flex items-center justify-center gap-1 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition-all shrink-0 cursor-pointer"
-                  >
-                    <UserX className="h-3.5 w-3.5" />
-                    <span>Unassign</span>
-                  </button>
-                )}
               </div>
+            ) : viewJob.status !== 'CANCELLED' && (
+              viewJob.status === 'NEW' || !viewJob.assigned_technician ? (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <UserX className="h-6 w-6 text-amber-600 shrink-0" />
+                    <div>
+                      <div className="font-bold text-amber-800 text-xs">
+                        Awaiting Technician Assignment
+                      </div>
+                      <div className="text-[11px] text-slate-600">
+                        Job is currently NEW and unassigned in the operational queue.
+                      </div>
+                    </div>
+                  </div>
+
+                  {isDispatcher && (
+                    <button
+                      onClick={() => {
+                        setViewJob(null);
+                        openSmartAssignmentModal(viewJob);
+                      }}
+                      className="flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 active:scale-95 transition-all shrink-0 cursor-pointer"
+                    >
+                      <Sparkles className="h-4 w-4 text-amber-300" />
+                      <span>Smart Assignment</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <UserCheck className="h-6 w-6 text-emerald-600 shrink-0" />
+                    <div>
+                      <div className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                        <span>{viewJob.assigned_technician.full_name}</span>
+                        <span className="text-xs font-mono text-emerald-700 font-semibold">
+                          ({viewJob.assigned_technician.employee_code})
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-600 flex items-center gap-3 mt-0.5">
+                        <span>
+                          Required Skill:{' '}
+                          <strong className="text-purple-700 font-semibold">
+                            {viewJob.required_skill?.skill_name || 'Certified'}
+                          </strong>
+                        </span>
+                        <span>•</span>
+                        <span>
+                          Current Execution:{' '}
+                          <strong className="text-blue-700 font-bold">
+                            ● {getStatusDisplayLabel(viewJob.status)}
+                          </strong>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {isDispatcher && viewJob.status === 'ASSIGNED' && (
+                    <button
+                      onClick={() => {
+                        setViewJob(null);
+                        setUnassignJobTarget(viewJob);
+                      }}
+                      className="flex items-center justify-center gap-1 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition-all shrink-0 cursor-pointer"
+                    >
+                      <UserX className="h-3.5 w-3.5" />
+                      <span>Unassign</span>
+                    </button>
+                  )}
+                </div>
+              )
             )}
 
             {/* ── Context-Aware ETA Telemetry ── */}
@@ -1371,9 +1559,20 @@ export default function JobManagement() {
 
             {/* Error Message */}
             {formError && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
-                <span>{formError}</span>
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-semibold">{formError.title}</div>
+                  {formError.messages.length > 1 ? (
+                    <ul className="list-disc list-inside space-y-0.5 pl-0.5">
+                      {formError.messages.map((msg, idx) => (
+                        <li key={idx}>{msg}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div>{formError.messages[0]}</div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1632,9 +1831,20 @@ export default function JobManagement() {
             </div>
 
             {formError && (
-              <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
-                <span>{formError}</span>
+              <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-semibold">{formError.title}</div>
+                  {formError.messages.length > 1 ? (
+                    <ul className="list-disc list-inside space-y-0.5 pl-0.5">
+                      {formError.messages.map((msg, idx) => (
+                        <li key={idx}>{msg}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div>{formError.messages[0]}</div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1815,16 +2025,25 @@ export default function JobManagement() {
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setIsAddModalOpen(false)}
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-700 hover:bg-slate-50 font-medium cursor-pointer"
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-700 hover:bg-slate-50 font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-white font-semibold hover:bg-blue-700 cursor-pointer shadow-xs"
+                  disabled={isSubmitting}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-white font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-xs flex items-center gap-2"
                 >
-                  Create Job Order
+                  {isSubmitting ? (
+                    <>
+                      <RotateCw className="h-4 w-4 animate-spin" />
+                      <span>Creating...</span>
+                    </>
+                  ) : (
+                    <span>Create Job Order</span>
+                  )}
                 </button>
               </div>
             </form>
@@ -1847,9 +2066,20 @@ export default function JobManagement() {
             </div>
 
             {formError && (
-              <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
-                <span>{formError}</span>
+              <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-semibold">{formError.title}</div>
+                  {formError.messages.length > 1 ? (
+                    <ul className="list-disc list-inside space-y-0.5 pl-0.5">
+                      {formError.messages.map((msg, idx) => (
+                        <li key={idx}>{msg}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div>{formError.messages[0]}</div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1949,16 +2179,25 @@ export default function JobManagement() {
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setEditJob(null)}
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-700 hover:bg-slate-50 font-medium cursor-pointer"
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-700 hover:bg-slate-50 font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-white font-semibold hover:bg-blue-700 cursor-pointer shadow-xs"
+                  disabled={isSubmitting}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-white font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-xs flex items-center gap-2"
                 >
-                  Save Changes
+                  {isSubmitting ? (
+                    <>
+                      <RotateCw className="h-4 w-4 animate-spin" />
+                      <span>Updating...</span>
+                    </>
+                  ) : (
+                    <span>Save Changes</span>
+                  )}
                 </button>
               </div>
             </form>
@@ -1984,8 +2223,12 @@ export default function JobManagement() {
             </p>
 
             {formError && (
-              <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs">
-                {formError}
+              <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+                <div>
+                  <span className="font-semibold">{formError.title}: </span>
+                  <span>{formError.messages.join(' ')}</span>
+                </div>
               </div>
             )}
 
@@ -2005,16 +2248,25 @@ export default function JobManagement() {
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setCancelJobTarget(null)}
-                  className="rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 font-medium cursor-pointer"
+                  className="rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Dismiss
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-rose-600 px-4 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-rose-700 cursor-pointer"
+                  disabled={isSubmitting}
+                  className="rounded-lg bg-rose-600 px-4 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
                 >
-                  Confirm Cancellation
+                  {isSubmitting ? (
+                    <>
+                      <RotateCw className="h-3.5 w-3.5 animate-spin" />
+                      <span>Cancelling...</span>
+                    </>
+                  ) : (
+                    <span>Confirm Cancellation</span>
+                  )}
                 </button>
               </div>
             </form>

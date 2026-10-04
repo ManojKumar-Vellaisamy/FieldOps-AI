@@ -44,7 +44,12 @@ export const jobService = {
 
   /** Patch job status transition */
   async updateJobStatus(id: string, status: string, completion_notes?: string): Promise<Job> {
-    const response = await apiClient.patch<Job>(`/jobs/${id}/status`, { status, completion_notes });
+    const statusMap: Record<string, string> = {
+      EN_ROUTE: 'TRAVELLING',
+      IN_PROGRESS: 'WORKING',
+    };
+    const normalizedStatus = statusMap[status.toUpperCase()] || status;
+    const response = await apiClient.patch<Job>(`/jobs/${id}/status`, { status: normalizedStatus, completion_notes });
     return response.data;
   },
 

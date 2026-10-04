@@ -8,8 +8,10 @@ export type JobStatus =
   | 'NEW'
   | 'ASSIGNED'
   | 'TRAVELLING'
+  | 'EN_ROUTE'
   | 'ARRIVED'
   | 'WORKING'
+  | 'IN_PROGRESS'
   | 'COMPLETED'
   | 'CANCELLED';
 

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Bell,
   Sun,
@@ -18,6 +19,7 @@ import {
 import { cn } from '@/utils/cn';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/contexts/AuthContext';
+import { useWeather } from '@/contexts/WeatherContext';
 
 interface NavbarProps {
   title?: string | undefined;
@@ -31,10 +33,29 @@ interface NavbarProps {
  * Role-Specific Status Widget, Theme Toggle, Notifications, and User Profile.
  */
 export function Navbar({ onMobileToggle, className }: NavbarProps) {
+  const navigate = useNavigate();
   const { isDark, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const { navbarWeather: weather, isLoading: weatherLoading, error: weatherError } = useWeather();
+
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const notifMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setUserMenuOpen(false);
+      }
+      if (notifMenuRef.current && !notifMenuRef.current.contains(event.target as Node)) {
+        setNotificationsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
 
   const getInitials = (name: string) => {
     return name
@@ -134,10 +155,28 @@ export function Navbar({ onMobileToggle, className }: NavbarProps) {
       <div className="flex items-center gap-2 md:gap-3">
         {/* Weather Display */}
         <div className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 lg:flex">
-          <CloudSun className="h-4 w-4 text-amber-500" />
+          <CloudSun className={cn("h-4 w-4", weather ? "text-amber-500" : "text-slate-400")} />
           <div className="flex items-center gap-1.5 text-xs">
-            <span className="font-bold text-slate-800">24°C</span>
-            <span className="text-slate-500">Moderate Rain</span>
+            {weather ? (
+              <>
+                <span className="font-bold text-slate-800">{weather.temperature}</span>
+                <span className="text-slate-500">{weather.condition}</span>
+                {weather.apparentTemperature && (
+                  <span className="text-slate-400 text-[11px] hidden xl:inline font-mono">
+                    (Feels {weather.apparentTemperature})
+                  </span>
+                )}
+              </>
+            ) : weatherLoading ? (
+              <span className="text-slate-400 font-medium">Loading weather...</span>
+            ) : (
+              <span
+                className="text-slate-400 font-medium truncate max-w-[220px]"
+                title={weatherError || 'Weather unavailable — location permission required'}
+              >
+                {weatherError || 'Weather unavailable — location permission required'}
+              </span>
+            )}
           </div>
         </div>
 
@@ -167,21 +206,18 @@ export function Navbar({ onMobileToggle, className }: NavbarProps) {
         </button>
 
         {/* Notifications Dropdown */}
-        <div className="relative">
+        <div ref={notifMenuRef} className="relative">
           <button
             id="notifications-button"
             onClick={() => setNotificationsOpen(!notificationsOpen)}
             aria-label="View notifications"
             className={cn(
-              'relative flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600',
-              'transition-all duration-200 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900',
+              'flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200',
+              'text-slate-500 transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700',
+              notificationsOpen && 'bg-slate-100 border-slate-300 text-slate-800',
             )}
           >
             <Bell className="h-4 w-4" />
-            <span
-              aria-hidden="true"
-              className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-blue-600 ring-2 ring-white animate-pulse"
-            />
           </button>
 
           {/* Notifications Dropdown Menu */}
@@ -189,19 +225,9 @@ export function Navbar({ onMobileToggle, className }: NavbarProps) {
             <div className="absolute right-0 mt-2 w-80 rounded-xl border border-slate-200 bg-white p-4 shadow-xl z-50 animate-fade-in">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                 <span className="text-xs font-bold text-slate-900">Notifications</span>
-                <span className="rounded bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200">
-                  2 New
-                </span>
               </div>
-              <div className="mt-3 flex flex-col gap-2.5 text-xs">
-                <div className="rounded-lg bg-slate-50 border border-slate-100 p-2.5">
-                  <p className="font-semibold text-slate-800">Dispatch Recommendation Ready</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Technician Marcus Vance optimized for JOB-4831</p>
-                </div>
-                <div className="rounded-lg bg-slate-50 border border-slate-100 p-2.5">
-                  <p className="font-semibold text-slate-800">Weather Telemetry Updated</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Moderate rain affecting Zone 4 ETAs (+5 mins)</p>
-                </div>
+              <div className="py-6 text-center text-xs text-slate-400 font-medium">
+                No new notifications
               </div>
             </div>
           )}
@@ -211,14 +237,15 @@ export function Navbar({ onMobileToggle, className }: NavbarProps) {
         <div aria-hidden="true" className="mx-1 h-5 w-px bg-slate-200" />
 
         {/* User Profile Dropdown */}
-        <div className="relative">
+        <div ref={userMenuRef} className="relative">
           <button
             id="user-menu-button"
             onClick={() => setUserMenuOpen(!userMenuOpen)}
             aria-label="Open user menu"
             className={cn(
-              'flex items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50 p-1 pr-2.5',
+              'flex items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50 p-1 pr-2.5 cursor-pointer',
               'transition-all duration-200 hover:border-slate-300 hover:bg-slate-100',
+              userMenuOpen && 'border-slate-300 bg-slate-100',
             )}
           >
             <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-blue-600 to-indigo-600 font-bold text-xs text-white shadow-xs">
@@ -235,26 +262,63 @@ export function Navbar({ onMobileToggle, className }: NavbarProps) {
           {userMenuOpen && (
             <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-xl z-50 animate-fade-in">
               <div className="px-3 py-2 border-b border-slate-100">
-                <p className="text-xs font-bold text-slate-900">{userName}</p>
-                <p className="text-[11px] text-slate-500">{userEmail}</p>
-                <span className="mt-1.5 inline-block rounded bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200">
+                <p className="text-xs font-bold text-slate-900 truncate">{userName}</p>
+                <p className="text-[11px] text-slate-500 truncate">{userEmail}</p>
+                <span
+                  className={cn(
+                    'mt-1.5 inline-block rounded px-2 py-0.5 text-[10px] font-bold border',
+                    userRole === 'Administrator' && 'bg-purple-50 text-purple-700 border-purple-200',
+                    userRole === 'Technician' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                    userRole !== 'Administrator' && userRole !== 'Technician' && 'bg-blue-50 text-blue-700 border-blue-200',
+                  )}
+                >
                   {userRole}
                 </span>
               </div>
               <div className="mt-1 flex flex-col gap-0.5 text-xs text-slate-600">
-                <button className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50 text-left w-full transition-colors">
+                <button
+                  id="menu-profile-settings"
+                  type="button"
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    navigate('/profile');
+                  }}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50 hover:text-slate-900 text-left w-full transition-colors cursor-pointer font-medium"
+                >
                   <User className="h-3.5 w-3.5 text-slate-400" /> Profile Settings
                 </button>
-                <button className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50 text-left w-full transition-colors">
+                <button
+                  id="menu-security-access"
+                  type="button"
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    navigate('/profile/security');
+                  }}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50 hover:text-slate-900 text-left w-full transition-colors cursor-pointer font-medium"
+                >
                   <Shield className="h-3.5 w-3.5 text-slate-400" /> Security & Access
                 </button>
-                <button className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50 text-left w-full transition-colors">
+                <button
+                  id="menu-preferences"
+                  type="button"
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    navigate('/profile/preferences');
+                  }}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50 hover:text-slate-900 text-left w-full transition-colors cursor-pointer font-medium"
+                >
                   <Settings className="h-3.5 w-3.5 text-slate-400" /> Preferences
                 </button>
                 <div className="my-1 border-t border-slate-100" />
                 <button
-                  onClick={() => logout()}
-                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-rose-600 hover:bg-rose-50 text-left w-full font-semibold transition-colors"
+                  id="menu-sign-out"
+                  type="button"
+                  onClick={async () => {
+                    setUserMenuOpen(false);
+                    await logout();
+                    navigate('/login', { replace: true });
+                  }}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-rose-600 hover:bg-rose-50 text-left w-full font-semibold transition-colors cursor-pointer"
                 >
                   <LogOut className="h-3.5 w-3.5 text-rose-500" /> Sign Out
                 </button>
@@ -266,4 +330,3 @@ export function Navbar({ onMobileToggle, className }: NavbarProps) {
     </header>
   );
 }
-

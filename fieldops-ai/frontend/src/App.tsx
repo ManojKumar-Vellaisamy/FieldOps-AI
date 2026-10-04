@@ -3,6 +3,8 @@ import { AppRouter } from '@/routes/router';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { QueryProvider } from '@/contexts/QueryProvider';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { RealtimeProvider } from '@/contexts/RealtimeContext';
+import { WeatherProvider } from '@/contexts/WeatherContext';
 
 /**
  * Root application component.
@@ -10,17 +12,23 @@ import { AuthProvider } from '@/contexts/AuthContext';
  *  1. ThemeProvider   — CSS class + localStorage
  *  2. QueryProvider   — React Query client
  *  3. AuthProvider    — JWT Session state & RBAC
- *  4. AppLayout       — Suspense boundary
- *  5. AppRouter       — React Router
+ *  4. RealtimeProvider— WebSocket operational synchronization
+ *  5. WeatherProvider — Live Open-Meteo single source of truth
+ *  6. AppLayout       — Suspense boundary
+ *  7. AppRouter       — React Router
  */
 function App() {
   return (
     <ThemeProvider>
       <QueryProvider>
         <AuthProvider>
-          <AppLayout>
-            <AppRouter />
-          </AppLayout>
+          <RealtimeProvider>
+            <WeatherProvider>
+              <AppLayout>
+                <AppRouter />
+              </AppLayout>
+            </WeatherProvider>
+          </RealtimeProvider>
         </AuthProvider>
       </QueryProvider>
     </ThemeProvider>

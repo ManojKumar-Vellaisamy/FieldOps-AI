@@ -10,8 +10,21 @@ export interface User {
   email: string;
   full_name: string;
   role: UserRole;
+  phone?: string | null;
   is_active: boolean;
+  must_change_password?: boolean;
   created_at: string;
+}
+
+export interface UpdateProfilePayload {
+  full_name?: string | undefined;
+  phone?: string | undefined;
+}
+
+export interface ChangePasswordPayload {
+  current_password: string;
+  new_password: string;
+  confirm_password?: string;
 }
 
 export interface LoginCredentials {

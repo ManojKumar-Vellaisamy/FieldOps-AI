@@ -12,9 +12,10 @@ import { Sidebar, type NavSection } from '@/components/ui/Sidebar';
 import { useSidebarState } from '@/hooks/useSidebarState';
 import { Navbar } from '@/components/ui/Navbar';
 import { RoleGuard } from '@/guards/RoleGuard';
+import { useTechnicianGeolocation } from '@/hooks/useTechnicianGeolocation';
 import { cn } from '@/utils/cn';
 
-const TECHNICIAN_NAVIGATION: NavSection[] = [
+export const TECHNICIAN_NAVIGATION: NavSection[] = [
   {
     title: 'Overview',
     items: [
@@ -41,6 +42,9 @@ const TECHNICIAN_NAVIGATION: NavSection[] = [
 export function TechnicianLayout() {
   const { collapsed, toggle } = useSidebarState();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Automatically track and sync real GPS location across technician portal
+  useTechnicianGeolocation({ enabled: true });
 
   return (
     <RoleGuard allowedRoles={['Technician']}>

@@ -67,4 +67,19 @@ app.add_middleware(RequestLoggingMiddleware)
 register_exception_handlers(app)
 
 # ── Routers ───────────────────────────────────────────────────────────────────
+from app.api.v1.endpoints.users import router as users_router
 app.include_router(api_v1_router, prefix=settings.API_PREFIX)
+app.include_router(users_router, prefix="/users", include_in_schema=False)
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    """Root entry point providing quick links to UI and API docs."""
+    return {
+        "service": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "status": "operational",
+        "frontend_web_app": "http://localhost:5173",
+        "api_documentation": "/docs",
+        "health_check": f"{settings.API_PREFIX}/health",
+    }

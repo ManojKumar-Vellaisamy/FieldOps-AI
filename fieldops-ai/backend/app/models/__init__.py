@@ -12,6 +12,8 @@ from app.models.skill import Skill
 from app.models.technician import Technician
 from app.models.user import User
 
+from app.models.system_setting import SystemSetting
+
 __all__ = [
     "Role",
     "User",
@@ -21,6 +23,7 @@ __all__ = [
     "Assignment",
     "AuditLog",
     "ETAOverride",
+    "SystemSetting",
     "UserStatus",
     "JobStatus",
     "Priority",

@@ -1,0 +1,67 @@
+{
+  "model_type": "GradientBoostingRegressor",
+  "n_estimators": 120,
+  "max_depth": 4,
+  "total_samples": 80,
+  "train_samples": 64,
+  "test_samples": 16,
+  "routine_test_count": 3,
+  "non_routine_test_count": 13,
+  "metrics": {
+    "baseline_mae": 17.75,
+    "baseline_rmse": 20.75,
+    "baseline_r2": -0.323,
+    "model_mae": 4.29,
+    "model_rmse": 8.2,
+    "model_r2": 0.7933,
+    "overall_improvement_percent": 75.86,
+    "routine_baseline_mae": 0.67,
+    "routine_model_mae": 2.28,
+    "non_routine_baseline_mae": 21.69,
+    "non_routine_model_mae": 4.75,
+    "non_routine_improvement_percent": 78.11
+  },
+  "feature_importances": [
+    {
+      "feature": "distance_km",
+      "importance": 0.413
+    },
+    {
+      "feature": "traffic_delay_min",
+      "importance": 0.2138
+    },
+    {
+      "feature": "free_flow_travel_minutes",
+      "importance": 0.1902
+    },
+    {
+      "feature": "weather_impact_min",
+      "importance": 0.1057
+    },
+    {
+      "feature": "road_impact_min",
+      "importance": 0.0313
+    },
+    {
+      "feature": "wind_speed_kmh",
+      "importance": 0.0172
+    },
+    {
+      "feature": "event_attendance",
+      "importance": 0.011
+    },
+    {
+      "feature": "road_closure_active",
+      "importance": 0.0097
+    },
+    {
+      "feature": "event_impact_min",
+      "importance": 0.0046
+    },
+    {
+      "feature": "precipitation_mm",
+      "importance": 0.0034
+    }
+  ],
+  "artifact_file": "context_eta_model.joblib"
+}

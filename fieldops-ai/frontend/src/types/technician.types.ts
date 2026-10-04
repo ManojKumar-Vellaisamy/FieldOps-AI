@@ -25,10 +25,17 @@ export interface Technician {
   availability_status: string;
   current_latitude?: number | null | undefined;
   current_longitude?: number | null | undefined;
+  location_updated_at?: string | null | undefined;
   created_at: string;
   updated_at: string;
   user?: UserSummary | null | undefined;
   primary_skill?: SkillSummary | null | undefined;
+}
+
+export interface TechnicianLocationPatchPayload {
+  latitude: number;
+  longitude: number;
+  recorded_at?: string | undefined;
 }
 
 export interface PaginatedTechnicianResponse {
@@ -54,12 +61,23 @@ export interface TechnicianCreatePayload {
   full_name: string;
   email: string;
   password: string;
+  confirm_password?: string;
   phone?: string | undefined;
   primary_skill_id: string;
   years_experience: number;
   availability_status?: string | undefined;
   current_latitude?: number | undefined;
   current_longitude?: number | undefined;
+}
+
+export interface TechnicianDependencyCheck {
+  technician_id: string;
+  employee_code: string;
+  can_delete: boolean;
+  active_assignments_count: number;
+  total_assignments_count: number;
+  eta_overrides_count: number;
+  blockers: string[];
 }
 
 export interface TechnicianUpdatePayload {
@@ -79,4 +97,5 @@ export interface TechnicianSkillsResponse {
   primary_skill?: SkillSummary | null;
   skills: SkillSummary[];
 }
+
 

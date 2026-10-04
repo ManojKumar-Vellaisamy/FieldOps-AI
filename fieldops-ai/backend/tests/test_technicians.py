@@ -29,12 +29,12 @@ async def test_1_admin_can_create_technician():
     async with AsyncClient() as client:
         admin_headers = await get_token_headers(client, "admin@fieldops.ai", "Admin@123")
 
-        # Get primary skill ID from list
-        tech_list = await client.get(f"{BASE_URL}/api/v1/technicians", headers=admin_headers)
-        assert tech_list.status_code == 200
-        items = tech_list.json()["items"]
+        # Get primary skill ID from skills list
+        skills_res = await client.get(f"{BASE_URL}/api/v1/skills", headers=admin_headers)
+        assert skills_res.status_code == 200
+        items = skills_res.json()["items"]
         assert len(items) > 0
-        skill_id = items[0]["primary_skill_id"]
+        skill_id = items[0]["id"]
 
         unique_code = f"T-TEST-{str(uuid.uuid4())[:6].upper()}"
         unique_email = f"tech_{str(uuid.uuid4())[:6]}@fieldops.ai"
@@ -190,7 +190,27 @@ async def test_5_dispatcher_cannot_modify_technicians():
 async def test_6_technician_can_view_own_profile():
     """6. Test Technician can view own profile via /me."""
     async with AsyncClient() as client:
+        admin_headers = await get_token_headers(client, "admin@fieldops.ai", "Admin@123")
         tech_headers = await get_token_headers(client, "technician@fieldops.ai", "Tech@123")
+
+        # Verify profile retrieval via /me; provision if not yet created in clean baseline
+        check_res = await client.get(f"{BASE_URL}/api/v1/technicians/me", headers=tech_headers)
+        if check_res.status_code == 404:
+            skills_res = await client.get(f"{BASE_URL}/api/v1/skills", headers=admin_headers)
+            skill_id = skills_res.json()["items"][0]["id"]
+            await client.post(
+                f"{BASE_URL}/api/v1/technicians",
+                headers=admin_headers,
+                json={
+                    "employee_code": "TECH-ME-TEST",
+                    "full_name": "Field Technician",
+                    "email": "technician@fieldops.ai",
+                    "password": "Tech@123",
+                    "primary_skill_id": skill_id,
+                    "years_experience": 5,
+                    "availability_status": "AVAILABLE",
+                },
+            )
 
         res = await client.get(f"{BASE_URL}/api/v1/technicians/me", headers=tech_headers)
         assert res.status_code == 200
@@ -288,3 +308,21 @@ async def test_10_audit_log_created_after_mutation():
             assert audit_entry.action == "TECHNICIAN_CREATED"
             assert audit_entry.entity == "Technician"
         await local_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_11_technician_location_telemetry_patch():
+    """11. Test technician can update live GPS location telemetry."""
+    async with AsyncClient() as client:
+        tech_headers = await get_token_headers(client, "technician@fieldops.ai", "Tech@123")
+
+        payload = {
+            "latitude": 37.7749,
+            "longitude": -122.4194,
+        }
+
+        res = await client.patch(f"{BASE_URL}/api/v1/technicians/me/location", json=payload, headers=tech_headers)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["current_latitude"] == 37.7749
+        assert data["current_longitude"] == -122.4194

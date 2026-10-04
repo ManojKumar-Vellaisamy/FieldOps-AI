@@ -69,21 +69,30 @@ export default function TechnicianProfile() {
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5">
               <div className="flex items-center gap-4">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-600 to-emerald-500 text-white font-extrabold text-xl shadow-md">
-                  {user?.full_name ? user.full_name.substring(0, 2).toUpperCase() : 'AR'}
+                  {user?.full_name ? user.full_name.substring(0, 2).toUpperCase() : 'FT'}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                      {profile?.employee_code || 'TECH-001'}
+                      {profile?.employee_code || 'Unassigned'}
                     </span>
                     <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                      {profile?.availability_status || 'AVAILABLE'}
+                      {profile?.availability_status || 'PENDING'}
                     </span>
                   </div>
-                  <h2 className="text-xl font-bold text-slate-900 mt-1">{profile?.user?.full_name || user?.full_name}</h2>
+                  <h2 className="text-xl font-bold text-slate-900 mt-1">{profile?.user?.full_name || user?.full_name || 'Field Technician'}</h2>
                 </div>
               </div>
             </div>
+
+            {!profile && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
+                <p className="font-semibold">Technician Profile Pending</p>
+                <p className="mt-0.5 text-amber-700">
+                  Your field operations profile has not yet been provisioned by an Administrator in Technician Management.
+                </p>
+              </div>
+            )}
 
             {/* Profile Fields Read-Only Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
@@ -92,7 +101,7 @@ export default function TechnicianProfile() {
                   <Mail className="h-4 w-4 text-emerald-600" />
                   <span className="font-semibold uppercase tracking-wider text-[10px]">Email Address</span>
                 </div>
-                <div className="font-semibold text-slate-800">{profile?.user?.email || user?.email}</div>
+                <div className="font-semibold text-slate-800">{profile?.user?.email || user?.email || 'technician@fieldops.ai'}</div>
               </div>
 
               <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-1">
@@ -100,7 +109,7 @@ export default function TechnicianProfile() {
                   <Phone className="h-4 w-4 text-emerald-600" />
                   <span className="font-semibold uppercase tracking-wider text-[10px]">Contact Phone</span>
                 </div>
-                <div className="font-semibold text-slate-800">{profile?.user?.phone || '+1 (555) 019-2834'}</div>
+                <div className="font-semibold text-slate-800">{profile?.user?.phone || 'Not provided'}</div>
               </div>
 
               <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-1">
@@ -108,7 +117,7 @@ export default function TechnicianProfile() {
                   <Wrench className="h-4 w-4 text-emerald-600" />
                   <span className="font-semibold uppercase tracking-wider text-[10px]">Primary Certified Skill</span>
                 </div>
-                <div className="font-bold text-emerald-700">{profile?.primary_skill?.skill_name || 'HVAC Master'}</div>
+                <div className="font-bold text-emerald-700">{profile?.primary_skill?.skill_name || 'Unassigned'}</div>
               </div>
 
               <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-1">
@@ -116,7 +125,7 @@ export default function TechnicianProfile() {
                   <Award className="h-4 w-4 text-emerald-600" />
                   <span className="font-semibold uppercase tracking-wider text-[10px]">Field Experience</span>
                 </div>
-                <div className="font-bold text-slate-900">{profile?.years_experience || 5} Years</div>
+                <div className="font-bold text-slate-900">{profile?.years_experience != null ? `${profile.years_experience} Years` : 'N/A'}</div>
               </div>
 
               <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-1">
@@ -124,7 +133,7 @@ export default function TechnicianProfile() {
                   <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                   <span className="font-semibold uppercase tracking-wider text-[10px]">Account Status</span>
                 </div>
-                <div className="font-bold text-emerald-700">{profile?.user?.status || 'ACTIVE'}</div>
+                <div className="font-semibold text-slate-800">{profile?.user?.status || (user?.is_active ? 'ACTIVE' : 'INACTIVE')}</div>
               </div>
 
               <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-1">

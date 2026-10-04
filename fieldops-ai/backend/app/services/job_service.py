@@ -23,6 +23,13 @@ from app.schemas.job import (
     PaginatedJobResponse,
 )
 from app.schemas.skill import SkillResponse
+from app.core.realtime import (
+    ws_manager,
+    EVENT_JOB_STATUS_CHANGED,
+    EVENT_JOB_COMPLETED,
+    EVENT_JOB_CANCELLED,
+    EVENT_DISPATCH_PLAN_CHANGED,
+)
 
 
 class JobService:
@@ -47,8 +54,12 @@ class JobService:
         if job_obj.creator:
             resp.creator = JobCreatorSummary.model_validate(job_obj.creator)
 
-        if job_obj.assignments and len(job_obj.assignments) > 0:
-            assigned = job_obj.assignments[0]
+        active_asgs = [
+            a for a in getattr(job_obj, "assignments", [])
+            if getattr(a, "assignment_status", "") == "ASSIGNED"
+        ]
+        if active_asgs:
+            assigned = active_asgs[0]
             if assigned.technician:
                 full_n = (
                     assigned.technician.user.full_name
@@ -62,6 +73,14 @@ class JobService:
                 )
 
         return resp
+
+    def _get_assigned_technician_user_id(self, job_obj: Job) -> Optional[uuid.UUID]:
+        """Extract assigned technician's user UUID from job assignments if present."""
+        for asg in getattr(job_obj, "assignments", []):
+            if getattr(asg, "assignment_status", "") == "ASSIGNED":
+                if asg.technician and asg.technician.user_id:
+                    return asg.technician.user_id
+        return None
 
     async def list_jobs(
         self,
@@ -168,7 +187,22 @@ class JobService:
 
         created = await self.repo.create_job(job_obj, actor_id=actor_id)
         full_job = await self.repo.get_by_id(created.id)
-        return self._to_response(full_job or created)
+        target_job = full_job or created
+
+        # Broadcast DISPATCH_PLAN_CHANGED event to dispatchers
+        await ws_manager.broadcast_to_dispatchers(
+            EVENT_DISPATCH_PLAN_CHANGED,
+            {
+                "action": "JOB_CREATED",
+                "job_id": str(target_job.id),
+                "job_number": target_job.job_number,
+                "customer_name": target_job.customer_name,
+                "priority": target_job.priority.value if hasattr(target_job.priority, "value") else str(target_job.priority),
+                "status": "NEW",
+            },
+        )
+
+        return self._to_response(target_job)
 
     async def update_job(
         self,
@@ -181,19 +215,19 @@ class JobService:
         if not job:
             raise NotFoundError("Job", str(job_id))
 
-        if job.status == JobStatus.CANCELLED:
-            raise BadRequestError("Cancelled jobs cannot be modified.")
+        if job.status in (JobStatus.COMPLETED, JobStatus.CANCELLED):
+            raise BadRequestError(f"Cannot modify a {job.status.value.lower()} job.")
 
         old_summary = f"Customer: {job.customer_name}, Priority: {job.priority}, SkillID: {job.required_skill_id}"
 
         # Validate coordinates if provided
-        if payload.latitude is not None:
-            if not (-90.0 <= payload.latitude <= 90.0):
+        if "latitude" in payload.model_fields_set:
+            if payload.latitude is not None and not (-90.0 <= payload.latitude <= 90.0):
                 raise BadRequestError(f"Invalid latitude {payload.latitude}. Must be between -90 and 90.")
             job.latitude = payload.latitude
 
-        if payload.longitude is not None:
-            if not (-180.0 <= payload.longitude <= 180.0):
+        if "longitude" in payload.model_fields_set:
+            if payload.longitude is not None and not (-180.0 <= payload.longitude <= 180.0):
                 raise BadRequestError(f"Invalid longitude {payload.longitude}. Must be between -180 and 180.")
             job.longitude = payload.longitude
 
@@ -230,7 +264,23 @@ class JobService:
 
         updated = await self.repo.update_job(job, old_summary, new_summary, actor_id=actor_id)
         full_job = await self.repo.get_by_id(updated.id)
-        return self._to_response(full_job or updated)
+        target_job = full_job or updated
+
+        tech_user_id = self._get_assigned_technician_user_id(target_job)
+        await ws_manager.broadcast_operational_event(
+            EVENT_DISPATCH_PLAN_CHANGED,
+            {
+                "action": "JOB_UPDATED",
+                "job_id": str(target_job.id),
+                "job_number": target_job.job_number,
+                "customer_name": target_job.customer_name,
+                "priority": target_job.priority.value if hasattr(target_job.priority, "value") else str(target_job.priority),
+                "status": target_job.status.value if hasattr(target_job.status, "value") else str(target_job.status),
+            },
+            technician_user_id=tech_user_id,
+        )
+
+        return self._to_response(target_job)
 
 
     async def patch_status(
@@ -293,7 +343,25 @@ class JobService:
 
         updated = await self.repo.update_status(job, old_status, new_status, actor_id=actor_id)
         full_job = await self.repo.get_by_id(updated.id)
-        return self._to_response(full_job or updated)
+        target_job = full_job or updated
+
+        tech_user_id = self._get_assigned_technician_user_id(target_job)
+        event_type = EVENT_JOB_COMPLETED if new_status == JobStatus.COMPLETED.value else EVENT_JOB_STATUS_CHANGED
+        await ws_manager.broadcast_operational_event(
+            event_type,
+            {
+                "job_id": str(target_job.id),
+                "job_number": target_job.job_number,
+                "customer_name": target_job.customer_name,
+                "old_status": old_status,
+                "new_status": new_status,
+                "priority": target_job.priority.value if hasattr(target_job.priority, "value") else str(target_job.priority),
+                "updated_at": target_job.updated_at.isoformat() if target_job.updated_at else None,
+            },
+            technician_user_id=tech_user_id,
+        )
+
+        return self._to_response(target_job)
 
 
     async def cancel_job(
@@ -307,6 +375,9 @@ class JobService:
         if not job:
             raise NotFoundError("Job", str(job_id))
 
+        if job.status == JobStatus.COMPLETED:
+            raise BadRequestError("Cannot cancel a job that has already been completed.")
+
         if job.status == JobStatus.CANCELLED:
             return self._to_response(job)
 
@@ -315,4 +386,20 @@ class JobService:
 
         cancelled = await self.repo.cancel_job(job, payload.reason.strip(), actor_id=actor_id)
         full_job = await self.repo.get_by_id(cancelled.id)
-        return self._to_response(full_job or cancelled)
+        target_job = full_job or cancelled
+
+        tech_user_id = self._get_assigned_technician_user_id(target_job)
+        await ws_manager.broadcast_operational_event(
+            EVENT_JOB_CANCELLED,
+            {
+                "job_id": str(target_job.id),
+                "job_number": target_job.job_number,
+                "customer_name": target_job.customer_name,
+                "status": JobStatus.CANCELLED.value,
+                "cancellation_reason": payload.reason.strip(),
+                "cancelled_at": target_job.updated_at.isoformat() if target_job.updated_at else None,
+            },
+            technician_user_id=tech_user_id,
+        )
+
+        return self._to_response(target_job)

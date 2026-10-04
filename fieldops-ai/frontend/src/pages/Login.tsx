@@ -332,9 +332,6 @@ export default function LoginPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-slate-800">Administrator</span>
-                        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-700 border border-amber-200">
-                          Restricted
-                        </span>
                       </div>
                       <p className="text-[10px] text-slate-500">admin@fieldops.ai • Admin@123</p>
                     </div>

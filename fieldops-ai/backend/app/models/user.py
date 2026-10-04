@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, Enum as SQLEnum, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -39,6 +39,12 @@ class User(Base, UUIDMixin, TimestampMixin):
     status: Mapped[UserStatus] = mapped_column(
         SQLEnum(UserStatus, name="user_status_enum", native_enum=False),
         default=UserStatus.ACTIVE,
+        nullable=False,
+    )
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
         nullable=False,
     )
     last_login: Mapped[Optional[datetime]] = mapped_column(

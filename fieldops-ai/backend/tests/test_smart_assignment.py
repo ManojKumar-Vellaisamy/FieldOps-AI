@@ -146,7 +146,8 @@ async def test_4_technician_without_required_skill_is_excluded():
         for c in candidates:
             if c["primary_skill_name"] != res.json()["required_skill_name"]:
                 assert c["is_eligible"] is False
-                assert "required skill not certified" in (c["ineligibility_reason"] or "").lower()
+                all_reasons = " ".join([c.get("ineligibility_reason") or ""] + (c.get("explanation_reasons") or [])).lower()
+                assert "required skill not certified" in all_reasons
 
 
 @pytest.mark.asyncio

@@ -49,12 +49,16 @@ apiClient.interceptors.response.use(
       const status = error.response?.status;
 
       switch (status) {
-        case 401:
-          console.warn('[API] Unauthorized — clearing session token');
-          clearStoredToken();
-          // Dispatch global custom event for AuthContext listener
-          window.dispatchEvent(new Event('fieldops:unauthorized'));
+        case 401: {
+          const reqUrl = error.config?.url || '';
+          if (!reqUrl.includes('/auth/login') && !reqUrl.includes('/auth/logout')) {
+            console.warn('[API] Unauthorized — clearing session token');
+            clearStoredToken();
+            // Dispatch global custom event for AuthContext listener
+            window.dispatchEvent(new Event('fieldops:unauthorized'));
+          }
           break;
+        }
         case 403:
           console.warn('[API] Forbidden');
           break;

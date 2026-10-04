@@ -68,19 +68,19 @@ async def create_test_job(
     client: AsyncClient,
     headers: dict[str, str],
     skill_id: str,
-    latitude: float | None = 37.7749,
-    longitude: float | None = -122.4194,
+    latitude: float | None = 37.7800,
+    longitude: float | None = -122.4100,
 ) -> dict:
     """Helper to create a fresh service job."""
     payload = {
-        "customer_name": f"Module11 Customer {uuid.uuid4().hex[:4]}",
-        "customer_phone": "+1 (555) 888-7777",
-        "address": "100 Operational Context Way, San Francisco, CA",
-        "latitude": latitude if latitude is not None else 37.7749,
-        "longitude": longitude if longitude is not None else -122.4194,
+        "customer_name": f"Module 11 Test Customer {uuid.uuid4().hex[:4]}",
+        "customer_phone": "+1 (555) 888-9900",
+        "address": "100 Market Street, San Francisco, CA",
+        "latitude": latitude if latitude is not None else 37.7800,
+        "longitude": longitude if longitude is not None else -122.4100,
         "required_skill_id": skill_id,
         "priority": "HIGH",
-        "description": "Module 11 integration test job.",
+        "description": "Module 11 Real Traffic integration validation job.",
     }
     res = await client.post(f"{BASE_URL}/api/v1/jobs", json=payload, headers=headers)
     assert res.status_code == 201, f"Failed to create test job: {res.text}"
@@ -117,9 +117,10 @@ async def test_1_baseline_calculation_remains_unchanged():
         data = res.json()
 
         assert data["baseline_eta_minutes"] is not None
-        # Verify distance -> baseline equation
-        dist_km = data["distance_km"]
-        expected_baseline = max(1, round((dist_km / 40.0) * 60.0 + 3))
+        dist_miles = data["distance_miles"]
+        from app.services.settings_service import SettingsService
+        sys_settings = await SettingsService().get_settings()
+        expected_baseline = max(1, round((dist_miles / sys_settings.baseline_eta_speed_mph) * 60.0 + 3))
         assert data["baseline_eta_minutes"] == expected_baseline
 
 

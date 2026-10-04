@@ -180,7 +180,7 @@ export default function TechnicianDirectory() {
                       <td className="px-4 py-3.5">
                         <span className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 border border-blue-200 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
                           <Wrench className="h-3 w-3 text-blue-600" />
-                          <span>{tech.primary_skill?.skill_name || 'HVAC Master'}</span>
+                          <span>{tech.primary_skill?.skill_name || 'Unassigned'}</span>
                         </span>
                       </td>
                       <td className="px-4 py-3.5 font-semibold text-slate-800">{tech.years_experience} yrs</td>
@@ -260,7 +260,7 @@ export default function TechnicianDirectory() {
               </div>
               <div className="flex justify-between py-1 border-b border-slate-100">
                 <span className="text-slate-500">Primary Skill:</span>
-                <span className="font-semibold text-blue-600">{selectedTech.primary_skill?.skill_name || 'HVAC Master'}</span>
+                <span className="font-semibold text-blue-600">{selectedTech.primary_skill?.skill_name || 'Unassigned'}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-100">
                 <span className="text-slate-500">Experience:</span>

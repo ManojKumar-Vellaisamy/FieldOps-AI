@@ -3,6 +3,7 @@ Pydantic schemas for authentication request/response DTOs.
 """
 
 from datetime import datetime
+from typing import Optional
 from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field
 
@@ -24,10 +25,19 @@ class UserResponse(BaseModel):
     email: EmailStr
     full_name: str
     role: UserRole
+    phone: Optional[str] = None
     is_active: bool
+    must_change_password: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class UpdateProfileRequest(BaseModel):
+    """Request payload for updating current user profile."""
+
+    full_name: Optional[str] = Field(None, min_length=2, max_length=255, description="Full name of user")
+    phone: Optional[str] = Field(None, max_length=50, description="Contact phone number")
 
 
 class TokenResponse(BaseModel):
@@ -53,3 +63,11 @@ class PasswordResetRequest(BaseModel):
     """Request payload for password reset initiation."""
 
     email: EmailStr
+
+
+class ChangePasswordRequest(BaseModel):
+    """Request payload for authenticated user password change."""
+
+    current_password: str = Field(..., min_length=1, description="Existing password")
+    new_password: str = Field(..., min_length=8, description="New password meeting complexity rules")
+    confirm_password: Optional[str] = Field(None, min_length=8, description="Must match new password")

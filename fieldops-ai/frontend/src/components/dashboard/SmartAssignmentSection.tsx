@@ -16,12 +16,14 @@ import { cn } from '@/utils/cn';
 
 interface SmartAssignmentSectionProps {
   unassignedJobs: Job[];
+  totalJobs?: number;
   onAssignmentComplete: () => void;
   className?: string | undefined;
 }
 
 export function SmartAssignmentSection({
   unassignedJobs,
+  totalJobs,
   onAssignmentComplete,
   className,
 }: SmartAssignmentSectionProps) {
@@ -92,8 +94,9 @@ export function SmartAssignmentSection({
 
   const currentJob = unassignedJobs.find((j) => j.id === selectedJobId);
 
-  // All jobs assigned state
+  // When no unassigned jobs exist in the queue
   if (unassignedJobs.length === 0) {
+    const isZeroTotal = totalJobs === 0;
     return (
       <div
         className={cn(
@@ -106,18 +109,36 @@ export function SmartAssignmentSection({
             <Sparkles className="h-3 w-3 text-purple-600" />
             <span>Smart Assignment Engine</span>
           </span>
-          <span className="rounded bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-mono font-bold text-emerald-700">
-            100% Dispatched
-          </span>
+          {isZeroTotal ? (
+            <span className="rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-mono font-bold text-slate-600">
+              0 Active Jobs
+            </span>
+          ) : (
+            <span className="rounded bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-mono font-bold text-emerald-700">
+              100% Dispatched {totalJobs ? `(${totalJobs}/${totalJobs})` : ''}
+            </span>
+          )}
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center flex flex-col items-center justify-center gap-2">
-          <CheckCircle2 className="h-10 w-10 text-emerald-600" />
-          <h4 className="text-base font-extrabold text-slate-900">All Service Jobs Dispatched</h4>
-          <p className="text-xs text-slate-600 max-w-md">
-            There are currently no unassigned work orders in the queue. Create a new service job or monitor active
-            technician progress.
-          </p>
+          {isZeroTotal ? (
+            <>
+              <Layers className="h-10 w-10 text-slate-400" />
+              <h4 className="text-base font-extrabold text-slate-900">No Service Jobs Available</h4>
+              <p className="text-xs text-slate-600 max-w-md">
+                There are currently no service jobs in the database. Create a new service job to generate smart assignment recommendations.
+              </p>
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+              <h4 className="text-base font-extrabold text-slate-900">All Service Jobs Dispatched</h4>
+              <p className="text-xs text-slate-600 max-w-md">
+                There are currently no unassigned work orders in the queue. Create a new service job or monitor active
+                technician progress.
+              </p>
+            </>
+          )}
         </div>
       </div>
     );
@@ -142,7 +163,7 @@ export function SmartAssignmentSection({
               Module 9
             </span>
           </div>
-          <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">AI &amp; Rule-Based Technician Match</h3>
+          <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">Rule-Based Smart Technician Match</h3>
           <p className="text-xs text-slate-500">
             Real-time candidate evaluation based on active status, skill certification, backlog, and proximity.
           </p>

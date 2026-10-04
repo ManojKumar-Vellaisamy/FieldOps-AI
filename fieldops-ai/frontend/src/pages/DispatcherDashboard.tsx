@@ -7,19 +7,97 @@ import { SmartAssignmentSection } from '@/components/dashboard/SmartAssignmentSe
 import { JobETABadge } from '@/components/dashboard/JobETABadge';
 import { WeatherWidget } from '@/components/dashboard/WeatherWidget';
 import { ActivityTimeline } from '@/components/dashboard/ActivityTimeline';
-import { MOCK_ACTIVITIES, MOCK_WEATHER } from '@/data/mockDashboardData';
+import apiClient from '@/services/api';
 import { jobService } from '@/services/job.service';
 import { etaService } from '@/services/eta.service';
 import { assignmentService } from '@/services/assignment.service';
 import type { Job } from '@/types/job.types';
 import type { ETAResponse } from '@/types/eta.types';
+import type { ActivityItem, ActivityType } from '@/types/dashboard.types';
 import { cn } from '@/utils/cn';
+import { RealtimeConnectionBadge } from '@/components/common/RealtimeConnectionBadge';
+import { useRealtimeSync } from '@/hooks/useRealtimeSync';
+
+function formatRelativeTime(dateString?: string): string {
+  if (!dateString) return 'Just now';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return 'Recently';
+  const now = new Date();
+  const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffSec < 45) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay < 30) return `${diffDay}d ago`;
+  return date.toLocaleDateString();
+}
+
+function getAdjustmentSourceLabel(eta: ETAResponse): string {
+  // 1. Inspect data sources contributing positive delay
+  const activeSources = (eta.data_sources || []).filter(
+    (ds) => (ds.impact_minutes || 0) > 0 && ds.status === 'AVAILABLE',
+  );
+
+  const firstSource = activeSources[0];
+  if (activeSources.length === 1 && firstSource) {
+    const cat = (firstSource.category || firstSource.name || '').toUpperCase();
+    if (cat.includes('TRAFFIC')) return 'traffic';
+    if (cat.includes('WEATHER')) return 'weather';
+    if (cat.includes('EVENT')) return 'events';
+    if (cat.includes('ROAD') || cat.includes('RESTRICTION')) return 'road restrictions';
+    return 'context';
+  }
+
+  if (activeSources.length > 1) {
+    return 'context';
+  }
+
+  // 2. Inspect factors contributing positive delay
+  if (eta.factors && eta.factors.length > 0) {
+    const activeFactors = eta.factors.filter(
+      (f) => (f.impact_minutes || 0) > 0 && f.category !== 'TRAVEL' && f.category !== 'GPS',
+    );
+    const firstFactor = activeFactors[0];
+    if (activeFactors.length === 1 && firstFactor) {
+      const cat = (firstFactor.category || '').toUpperCase();
+      if (cat === 'TRAFFIC') return 'traffic';
+      if (cat === 'WEATHER') return 'weather';
+      if (cat === 'EVENTS' || cat === 'EVENT') return 'events';
+      if (cat === 'ROAD' || cat === 'RESTRICTIONS') return 'road restrictions';
+      return 'context';
+    }
+    if (activeFactors.length > 1) {
+      return 'context';
+    }
+  }
+
+  // 3. Fallback: inspect reason text for single distinct context factor
+  const reasonUpper = (eta.reason || '').toUpperCase();
+  const hasTraffic = reasonUpper.includes('TRAFFIC') || reasonUpper.includes('CONGESTION');
+  const hasWeather = reasonUpper.includes('WEATHER') || reasonUpper.includes('RAIN');
+  const hasEvents = reasonUpper.includes('EVENT');
+  const hasRoad = reasonUpper.includes('ROAD') || reasonUpper.includes('RESTRICTION');
+
+  const matchCount = [hasTraffic, hasWeather, hasEvents, hasRoad].filter(Boolean).length;
+  if (matchCount === 1) {
+    if (hasTraffic) return 'traffic';
+    if (hasWeather) return 'weather';
+    if (hasEvents) return 'events';
+    if (hasRoad) return 'road restrictions';
+  }
+
+  return 'context';
+}
 
 export default function DispatcherDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [totalJobs, setTotalJobs] = useState<number>(0);
+  const [totalUnassigned, setTotalUnassigned] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedJobModal, setSelectedJobModal] = useState<Job | null>(null);
   const [topEtaData, setTopEtaData] = useState<ETAResponse | null>(null);
@@ -27,12 +105,92 @@ export default function DispatcherDashboard() {
   const [topMatchScore, setTopMatchScore] = useState<number | null>(null);
   const [topMatchCandidateName, setTopMatchCandidateName] = useState<string | null>(null);
 
+
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [isActivitiesLoading, setIsActivitiesLoading] = useState<boolean>(true);
+  const [activitiesError, setActivitiesError] = useState<string | null>(null);
+
+  const fetchRecentActivities = async () => {
+    setIsActivitiesLoading(true);
+    setActivitiesError(null);
+    try {
+      const res = await apiClient.get('/audit-logs?page_size=10');
+      if (res.data && Array.isArray(res.data.items)) {
+        const mapped: ActivityItem[] = res.data.items.map((log: {
+          id?: string;
+          created_at?: string;
+          user_full_name?: string | null;
+          action?: string;
+          entity?: string;
+          entity_id?: string | null;
+          reason?: string | null;
+        }) => {
+          const action = log.action || 'OPERATIONAL_EVENT';
+          const actionUpper = action.toUpperCase();
+
+          let type: ActivityType = 'system';
+          if (actionUpper.includes('RECOMMENDATION')) {
+            type = 'recommendation';
+          } else if (actionUpper.includes('ASSIGN')) {
+            type = 'assign';
+          } else if (actionUpper.includes('OVERRIDE')) {
+            type = 'override';
+          } else if (actionUpper.includes('CREATE')) {
+            type = 'create';
+          } else if (actionUpper.includes('AVAILABILITY')) {
+            type = 'availability';
+          } else if (actionUpper.includes('CANCEL') || actionUpper.includes('FAIL') || actionUpper.includes('WARN')) {
+            type = 'warning';
+          } else if (actionUpper.includes('TECHNICIAN') || actionUpper.includes('LOCATION') || actionUpper.includes('STATUS')) {
+            type = 'technician';
+          } else if (actionUpper.includes('JOB') || actionUpper.includes('DISPATCH')) {
+            type = 'dispatcher';
+          }
+
+          const title = action
+            .split('_')
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(' ');
+
+          const description =
+            log.reason ||
+            (log.entity
+              ? `${action.replace(/_/g, ' ')} on ${log.entity}${log.entity_id ? ` (#${log.entity_id.slice(0, 8)})` : ''}`
+              : action.replace(/_/g, ' '));
+
+          return {
+            id: log.id ? String(log.id) : `act-${Math.random().toString(36).slice(2, 7)}`,
+            type,
+            title,
+            description,
+            timestamp: formatRelativeTime(log.created_at),
+            actor: log.user_full_name || 'System / Automated',
+          };
+        });
+        setActivities(mapped);
+      } else {
+        setActivities([]);
+      }
+    } catch (err) {
+      console.error('Failed to load recent activities telemetry', err);
+      setActivitiesError('Activity unavailable');
+      setActivities([]);
+    } finally {
+      setIsActivitiesLoading(false);
+    }
+  };
+
   const loadDashboardData = async () => {
     setIsLoading(true);
+    fetchRecentActivities();
     try {
-      const res = await jobService.getJobs({ page_size: 10 });
+      const [res, unassignedRes] = await Promise.all([
+        jobService.getJobs({ page_size: 10 }),
+        jobService.getJobs({ status: 'NEW', page_size: 1 }).catch(() => ({ total: 0 })),
+      ]);
       setJobs(res.items);
       setTotalJobs(res.total);
+      setTotalUnassigned(unassignedRes.total);
 
       // 1. Evaluate top KPI ETA from first active/assigned operational job
       const activeJob = res.items.find(
@@ -81,8 +239,30 @@ export default function DispatcherDashboard() {
     }
   };
 
+  // Subscribe to real-time events and resync
+  useRealtimeSync(
+    [
+      'JOB_ASSIGNED',
+      'JOB_UNASSIGNED',
+      'JOB_STATUS_CHANGED',
+      'JOB_COMPLETED',
+      'JOB_CANCELLED',
+      'DISPATCH_PLAN_CHANGED',
+      'TECHNICIAN_AVAILABILITY_CHANGED',
+    ],
+    () => {
+      loadDashboardData();
+    },
+    loadDashboardData,
+  );
+
   useEffect(() => {
     loadDashboardData();
+    // Background polling relaxed to 60s as a fallback safety net for WebSocket
+    const interval = setInterval(() => {
+      loadDashboardData();
+    }, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   const unassignedJobs = jobs.filter((j) => j.status === 'NEW');
@@ -101,6 +281,7 @@ export default function DispatcherDashboard() {
               <Shield className="h-3 w-3 text-purple-600" />
               <span>{user?.role || 'Dispatcher'}</span>
             </span>
+            <RealtimeConnectionBadge />
           </div>
 
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-slate-900">
@@ -201,7 +382,7 @@ export default function DispatcherDashboard() {
             </span>
           </div>
           <div className="mt-3 text-3xl font-black text-purple-700 font-mono">
-            {unassignedJobs.length}
+            {totalUnassigned}
           </div>
           <div className="mt-1 text-[11px] text-slate-500 font-medium">Awaiting technician assignment</div>
         </div>
@@ -224,7 +405,7 @@ export default function DispatcherDashboard() {
                 </span>
                 {(topEtaData.adjustment_minutes || 0) > 0 && (
                   <span className="rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] font-mono font-bold text-amber-800">
-                    +{topEtaData.adjustment_minutes}m weather
+                    +{topEtaData.adjustment_minutes}m {getAdjustmentSourceLabel(topEtaData)}
                   </span>
                 )}
               </div>
@@ -247,7 +428,7 @@ export default function DispatcherDashboard() {
         {/* Real Smart Assignment Match Score KPI */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">AI Match Score</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Technician Match Score</span>
             <span className="rounded-full bg-purple-50 border border-purple-200 px-2 py-0.5 text-[10px] font-mono font-bold text-purple-700">
               Module 9
             </span>
@@ -260,6 +441,13 @@ export default function DispatcherDashboard() {
               <div className="mt-1 text-[11px] text-slate-500 font-medium truncate">
                 {topMatchCandidateName ? `${topMatchCandidateName} • Top Match` : 'Candidate evaluated'}
               </div>
+            </div>
+          ) : totalJobs === 0 ? (
+            <div>
+              <div className="mt-2 text-2xl font-black text-slate-400 font-mono">
+                --
+              </div>
+              <div className="mt-1 text-[11px] text-slate-500 font-medium">No service jobs to dispatch</div>
             </div>
           ) : unassignedJobs.length === 0 ? (
             <div>
@@ -284,6 +472,7 @@ export default function DispatcherDashboard() {
           {/* Module 9: Professional Smart Technician Assignment Engine */}
           <SmartAssignmentSection
             unassignedJobs={unassignedJobs}
+            totalJobs={totalJobs}
             onAssignmentComplete={loadDashboardData}
           />
 
@@ -291,7 +480,7 @@ export default function DispatcherDashboard() {
           <ContextAwareETAPanel jobs={jobs} selectedJobId={selectedJobModal?.id} />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <WeatherWidget weather={MOCK_WEATHER} />
+            <WeatherWidget />
           </div>
 
           {/* Real Jobs Table */}
@@ -381,7 +570,11 @@ export default function DispatcherDashboard() {
 
         {/* Right Col: Audit & Activity Timeline */}
         <div className="lg:col-span-1 flex flex-col gap-6">
-          <ActivityTimeline activities={MOCK_ACTIVITIES} />
+          <ActivityTimeline
+            activities={activities}
+            isLoading={isActivitiesLoading}
+            error={activitiesError}
+          />
         </div>
       </div>
 

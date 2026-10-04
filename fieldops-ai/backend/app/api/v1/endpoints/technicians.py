@@ -15,6 +15,8 @@ from app.schemas.auth import UserResponse
 from app.schemas.technician import (
     PaginatedTechnicianResponse,
     TechnicianCreate,
+    TechnicianDependencyCheckResponse,
+    TechnicianLocationPatch,
     TechnicianResponse,
     TechnicianSkillsResponse,
     TechnicianStatusPatch,
@@ -178,16 +180,90 @@ async def patch_technician_status(
     return await service.patch_status(id, payload, actor_id=current_user.id)
 
 
+@router.patch(
+    "/me/location",
+    response_model=TechnicianResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update authenticated technician GPS location telemetry",
+)
+async def patch_my_location(
+    payload: TechnicianLocationPatch,
+    current_user: UserResponse = Depends(get_current_user),
+) -> TechnicianResponse:
+    """Update current authenticated technician's live GPS coordinates."""
+    service = TechnicianService()
+    my_tech = await service.repo.get_by_user_id(current_user.id)
+    if not my_tech:
+        raise NotFoundError("Technician profile for current user", str(current_user.id))
+
+    return await service.update_location(
+        my_tech.id,
+        payload.latitude,
+        payload.longitude,
+        recorded_at=payload.recorded_at,
+        actor_id=current_user.id,
+    )
+
+
+@router.post(
+    "/{id}/activate",
+    response_model=TechnicianResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Activate a deactivated technician profile and user account",
+    dependencies=[Depends(require_roles(UserRole.ADMINISTRATOR))],
+)
+async def activate_technician(
+    id: UUID,
+    current_user: UserResponse = Depends(get_current_user),
+) -> TechnicianResponse:
+    """Activate technician and corresponding user account. Restricted to Administrator role."""
+    service = TechnicianService()
+    return await service.activate_technician(id, actor_id=current_user.id)
+
+
+@router.post(
+    "/{id}/deactivate",
+    response_model=TechnicianResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Deactivate an active technician profile and user account",
+    dependencies=[Depends(require_roles(UserRole.ADMINISTRATOR))],
+)
+async def deactivate_technician(
+    id: UUID,
+    current_user: UserResponse = Depends(get_current_user),
+) -> TechnicianResponse:
+    """Deactivate technician and corresponding user account. Restricted to Administrator role."""
+    service = TechnicianService()
+    return await service.deactivate_technician(id, actor_id=current_user.id)
+
+
+@router.get(
+    "/{id}/dependencies",
+    response_model=TechnicianDependencyCheckResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Check operational dependencies for a technician before deletion",
+    dependencies=[Depends(require_roles(UserRole.ADMINISTRATOR))],
+)
+async def check_technician_dependencies(
+    id: UUID,
+    current_user: UserResponse = Depends(get_current_user),
+) -> TechnicianDependencyCheckResponse:
+    """Check if technician has any assignment or operational records. Restricted to Administrator role."""
+    service = TechnicianService()
+    return await service.check_dependencies(id)
+
+
 @router.delete(
     "/{id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Deactivate technician profile",
+    summary="Permanently delete technician profile if no operational dependencies exist",
     dependencies=[Depends(require_roles(UserRole.ADMINISTRATOR))],
 )
 async def delete_technician(
     id: UUID,
     current_user: UserResponse = Depends(get_current_user),
 ) -> None:
-    """Deactivate technician. Restricted to Administrator role."""
+    """Permanently delete technician. Restricted to Administrator role. Will fail with 409 if dependencies exist."""
     service = TechnicianService()
     await service.delete_technician(id, actor_id=current_user.id)
+

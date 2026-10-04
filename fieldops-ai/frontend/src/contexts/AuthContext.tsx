@@ -1,12 +1,14 @@
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import type { AuthState, LoginCredentials, User } from '@/types/auth.types';
+import type { AuthState, LoginCredentials, UpdateProfilePayload, User } from '@/types/auth.types';
 import { authService } from '@/services/auth.service';
 import { clearStoredToken, getStoredToken } from '@/services/api';
 
 interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
+  updateProfile: (payload: UpdateProfilePayload) => Promise<User>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -23,6 +25,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearStoredToken();
       setToken(null);
       setUser(null);
+    }
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    try {
+      const currentUser = await authService.getCurrentUser();
+      setUser(currentUser);
+    } catch {
+      // Ignore refresh error
     }
   }, []);
 
@@ -58,7 +69,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Listen for unauthorized 401 response events
     const handleUnauthorized = () => {
-      logout();
+      clearStoredToken();
+      setToken(null);
+      setUser(null);
     };
 
     window.addEventListener('fieldops:unauthorized', handleUnauthorized);
@@ -89,6 +102,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const updateProfile = useCallback(async (payload: UpdateProfilePayload) => {
+    const updated = await authService.updateProfile(payload);
+    setUser(updated);
+    return updated;
+  }, []);
+
   const value = useMemo(
     () => ({
       user,
@@ -97,9 +116,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
       login,
       logout,
+      refreshUser,
+      updateProfile,
     }),
-    [user, token, isLoading, login, logout],
+    [user, token, isLoading, login, logout, refreshUser, updateProfile],
   );
+
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

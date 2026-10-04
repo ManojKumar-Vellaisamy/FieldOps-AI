@@ -17,6 +17,11 @@ from app.schemas.assignment import (
     AssignmentResponse,
     CandidateTechnicianResponse,
 )
+from app.core.realtime import (
+    ws_manager,
+    EVENT_JOB_ASSIGNED,
+    EVENT_JOB_UNASSIGNED,
+)
 
 
 def calculate_haversine_distance_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -262,6 +267,26 @@ class AssignmentService:
 
         tech = await self.repository.get_technician_by_id(payload.technician_id)
         tech_name = tech.user.full_name if tech and tech.user else "Technician"
+        tech_user_id = tech.user_id if tech else None
+
+        # Broadcast JOB_ASSIGNED operational event
+        await ws_manager.broadcast_operational_event(
+            EVENT_JOB_ASSIGNED,
+            {
+                "assignment_id": str(assignment.id),
+                "job_id": str(job.id),
+                "job_number": job.job_number,
+                "customer_name": job.customer_name,
+                "address": job.address,
+                "priority": job.priority.value if hasattr(job.priority, "value") else str(job.priority),
+                "status": "ASSIGNED",
+                "technician_id": str(payload.technician_id),
+                "technician_name": tech_name,
+                "technician_user_id": str(tech_user_id) if tech_user_id else None,
+                "assigned_at": assignment.assigned_at.isoformat() if assignment.assigned_at else None,
+            },
+            technician_user_id=tech_user_id,
+        )
 
         return AssignmentResponse(
             id=assignment.id,
@@ -281,10 +306,27 @@ class AssignmentService:
         if not job:
             raise NotFoundError("Job", job_id)
 
-        updated_job = await self.repository.unassign_job_transaction(
-            job_id=job_id,
-            unassigned_by_user_id=actor_id,
-            reason="Dispatcher manually unassigned job",
+        try:
+            updated_job = await self.repository.unassign_job_transaction(
+                job_id=job_id,
+                unassigned_by_user_id=actor_id,
+                reason="Dispatcher manually unassigned job",
+            )
+        except ValueError as exc:
+            raise ConflictError(str(exc))
+
+        prior_tech_user_id = getattr(updated_job, "_unassigned_technician_user_id", None)
+
+        # Broadcast JOB_UNASSIGNED operational event
+        await ws_manager.broadcast_operational_event(
+            EVENT_JOB_UNASSIGNED,
+            {
+                "job_id": str(updated_job.id),
+                "job_number": updated_job.job_number,
+                "status": "NEW",
+                "unassigned_at": datetime.now(timezone.utc).isoformat(),
+            },
+            technician_user_id=prior_tech_user_id,
         )
 
         return {

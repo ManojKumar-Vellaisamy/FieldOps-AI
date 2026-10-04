@@ -196,8 +196,14 @@ class AssignmentRepository:
                 raise ValueError("Job is not currently assigned.")
 
             old_tech_id = str(assignment.technician_id) if assignment else None
+            prior_tech_user_id = None
             if assignment:
                 assignment.assignment_status = "UNASSIGNED"
+                tech_stmt = select(Technician).where(Technician.id == assignment.technician_id)
+                tech_res = await db.execute(tech_stmt)
+                tech = tech_res.scalar_one_or_none()
+                if tech:
+                    prior_tech_user_id = tech.user_id
 
             old_status = job.status.value
             job.status = JobStatus.NEW
@@ -217,6 +223,7 @@ class AssignmentRepository:
 
             await db.commit()
             await db.refresh(job)
+            setattr(job, "_unassigned_technician_user_id", prior_tech_user_id)
             return job
 
         if self.session:

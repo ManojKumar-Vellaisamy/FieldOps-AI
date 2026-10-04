@@ -193,4 +193,5 @@ export const MOCK_WEATHER: WeatherData = {
   impactSeverity: 'moderate',
   windSpeed: '12 km/h',
   humidity: '74%',
+  precipitation: '2.5 mm',
 };

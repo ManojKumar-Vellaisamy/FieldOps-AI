@@ -14,10 +14,8 @@ from app.core.logging import get_logger
 from app.core.security import get_password_hash
 from app.database.session import AsyncSessionLocal
 from app.models.enums import JobStatus, Priority, UserRole, UserStatus
-from app.models.job import Job
 from app.models.role import Role
 from app.models.skill import Skill
-from app.models.technician import Technician
 from app.models.user import User
 
 logger = get_logger(__name__)
@@ -55,16 +53,8 @@ DEFAULT_USERS = [
     {
         "email": "technician@fieldops.ai",
         "password": "Tech@123",
-        "full_name": "Alex Rivera",
+        "full_name": "Field Technician",
         "role_name": UserRole.TECHNICIAN.value,
-        "employee_code": "TECH-001",
-    },
-    {
-        "email": "tech@fieldops.ai",
-        "password": "Tech@123",
-        "full_name": "Alex Rivera",
-        "role_name": UserRole.TECHNICIAN.value,
-        "employee_code": "TECH-002",
     },
 ]
 
@@ -100,19 +90,28 @@ async def seed_users(session: AsyncSession, roles_map: dict[str, Role]) -> None:
     """
     Insert development users idempotently.
     Updates credentials and status if existing to guarantee demo login functionality.
+    NOTE: Field technicians are NOT created automatically; they must be provisioned
+    by an Administrator via the Technician Management interface.
     """
     now = datetime.now(timezone.utc)
 
-    # Seed realistic skills taxonomy idempotently
+    # Seed realistic skills taxonomy idempotently (matching all enterprise categories)
     default_skills_data = [
         {"skill_name": "HVAC Master", "category": "HVAC", "description": "Master certification in industrial HVAC chilling and ventilation systems."},
         {"skill_name": "High Voltage Specialist", "category": "Electrical", "description": "Certification for high-voltage industrial grid maintenance and safety."},
         {"skill_name": "Fiber Optics Specialist", "category": "Telecommunications", "description": "Fiber optic splicing, OTDR testing, and infrastructure rollout."},
         {"skill_name": "Enterprise Router Admin", "category": "Network", "description": "Cisco/BGP routing configuration, VPN tunnels, and core network diagnostics."},
         {"skill_name": "Precision Sensor Calibration", "category": "Calibration", "description": "Industrial IoT sensor testing, pressure gauge calibration, and compliance documentation."},
+        {"skill_name": "AC Repair", "category": "Electrical", "description": "Commercial and residential air conditioning maintenance, diagnosis, and refrigerant recovery."},
+        {"skill_name": "Master Plumber & Pipefitter", "category": "Plumbing & Piping", "description": "Commercial piping, hydronic heating, backflow prevention, and drainage diagnostics."},
+        {"skill_name": "Commercial Refrigeration Tech", "category": "Refrigeration", "description": "Walk-in freezers, supermarket refrigeration systems, and industrial chiller maintenance."},
+        {"skill_name": "Fire Alarm & Life Safety Tech", "category": "Fire & Life Safety", "description": "NFPA compliance, fire alarm control panels, smoke suppression, and emergency sprinkler systems."},
+        {"skill_name": "CCTV & Access Control Specialist", "category": "Security & Surveillance", "description": "IP surveillance cameras, biometric access control gates, and intrusion alarm systems."},
+        {"skill_name": "Solar PV & Energy Storage Specialist", "category": "Renewable Energy", "description": "Commercial solar array installation, inverter commissioning, and battery energy storage systems (BESS)."},
+        {"skill_name": "PLC & Industrial Automation Engineer", "category": "Industrial Automation", "description": "SCADA telemetry, Programmable Logic Controller (PLC) programming, and industrial robot diagnostics."},
+        {"skill_name": "Hydraulics & Mechanical Specialist", "category": "Mechanical Systems", "description": "Industrial pumps, hydraulic presses, conveyor drive systems, and mechanical powertrain repair."},
     ]
 
-    hvac_skill = None
     for s_info in default_skills_data:
         s_stmt = select(Skill).where(Skill.skill_name == s_info["skill_name"])
         s_res = await session.execute(s_stmt)
@@ -129,12 +128,6 @@ async def seed_users(session: AsyncSession, roles_map: dict[str, Role]) -> None:
             )
             session.add(new_s)
             await session.flush()
-            if s_info["skill_name"] == "HVAC Master":
-                hvac_skill = new_s
-        else:
-            if s_info["skill_name"] == "HVAC Master":
-                hvac_skill = existing_s
-
 
     for user_info in DEFAULT_USERS:
         email = user_info["email"].strip().lower()
@@ -147,16 +140,15 @@ async def seed_users(session: AsyncSession, roles_map: dict[str, Role]) -> None:
             logger.error("seed_user_role_missing", role_name=user_info["role_name"])
             continue
 
-        hashed_pwd = get_password_hash(user_info["password"])
-
         if existing_user:
-            existing_user.password_hash = hashed_pwd
-            existing_user.role_id = role.id
-            existing_user.status = UserStatus.ACTIVE
-            existing_user.updated_at = now
-            user_obj = existing_user
-            logger.info("seed_user_updated", email=email)
+            # PRESERVE existing user password hash and account state.
+            # Never overwrite passwords on restart.
+            if not existing_user.role_id:
+                existing_user.role_id = role.id
+                existing_user.updated_at = now
+            logger.info("seed_user_preserved", email=email)
         else:
+            hashed_pwd = get_password_hash(user_info["password"])
             new_user = User(
                 id=uuid.uuid4(),
                 role_id=role.id,
@@ -169,96 +161,145 @@ async def seed_users(session: AsyncSession, roles_map: dict[str, Role]) -> None:
             )
             session.add(new_user)
             await session.flush()
-            user_obj = new_user
-            logger.info("seed_user_created", email=email, role=role.name)
-
-        # Create Technician profile if user role is Technician
-        if user_info["role_name"] == UserRole.TECHNICIAN.value:
-            tech_stmt = select(Technician).where(Technician.user_id == user_obj.id)
-            tech_res = await session.execute(tech_stmt)
-            existing_tech = tech_res.scalar_one_or_none()
-            if not existing_tech:
-                new_tech = Technician(
-                    id=uuid.uuid4(),
-                    user_id=user_obj.id,
-                    employee_code=user_info.get("employee_code", f"TECH-{str(user_obj.id)[:4]}"),
-                    primary_skill_id=hvac_skill.id if hvac_skill else None,
-                    years_experience=5,
-                    availability_status="AVAILABLE",
-                    current_latitude=37.7550,
-                    current_longitude=-122.4300,
-                )
-                session.add(new_tech)
-                await session.flush()
-                logger.info("seed_technician_profile_created", user_id=str(user_obj.id))
-            else:
-                if existing_tech.current_latitude is None or existing_tech.current_longitude is None:
-                    existing_tech.current_latitude = 37.7550
-                    existing_tech.current_longitude = -122.4300
-                    await session.flush()
+            logger.info("seed_user_created", email=email)
 
 
+from app.models.assignment import Assignment
+from app.models.job import Job
+from app.models.technician import Technician
 
-async def seed_jobs(session: AsyncSession) -> None:
-    """Seed initial development jobs idempotently."""
+
+async def seed_demo_operational_data(session: AsyncSession) -> None:
+    """
+    DEPRECATED: Strictly excluded from application startup lifecycle.
+    Operational entities (technicians, jobs, assignments, demo accounts) must NEVER
+    be auto-created on normal application startup.
+    This function is retained only for historical reference and must not be called by seed_db().
+    """
     now = datetime.now(timezone.utc)
-
-    job_chk = await session.execute(select(Job).where(Job.job_number == "JOB-10001"))
-    if job_chk.scalar_one_or_none():
+    user_stmt = select(User).where(User.email == "technician@fieldops.ai")
+    tech_user = (await session.execute(user_stmt)).scalar_one_or_none()
+    if not tech_user:
         return
 
-    disp_res = await session.execute(select(User).where(User.email == "dispatcher@fieldops.ai"))
-    disp_user = disp_res.scalar_one_or_none()
+    # Query a seeded skill for primary_skill_id
+    skill_stmt = select(Skill).limit(1)
+    skill_obj = (await session.execute(skill_stmt)).scalar_one_or_none()
+    first_skill_id = skill_obj.id if skill_obj else None
 
-    skill_res = await session.execute(select(Skill).where(Skill.skill_name == "HVAC Master"))
-    hvac_skill = skill_res.scalar_one_or_none()
-
-    if not hvac_skill:
-        return
-
-    default_jobs = [
-        {
-            "job_number": "JOB-10001",
-            "customer_name": "Acme Industrial Logistics",
-            "customer_phone": "+1 (555) 234-5678",
-            "address": "742 Evergreen Terrace, Sector 4, Springfield",
-            "latitude": 37.7749,
-            "longitude": -122.4194,
-            "priority": Priority.HIGH,
-            "status": JobStatus.NEW,
-            "description": "Emergency HVAC chiller unit main compressor overhaul and coolant flush.",
-        },
-        {
-            "job_number": "JOB-10002",
-            "customer_name": "Apex Telecommunications Grid",
-            "customer_phone": "+1 (555) 876-5432",
-            "address": "100 Innovation Way, Building B, Tech City",
-            "latitude": 37.7833,
-            "longitude": -122.4167,
-            "priority": Priority.MEDIUM,
-            "status": JobStatus.NEW,
-            "description": "Routine quarterly inspection of rooftop ventilation and climate control.",
-        },
-    ]
-
-    for j_data in default_jobs:
-        j_obj = Job(
+    # 1. Ensure TECH-001 and TECH-002 exist
+    tech1 = (await session.execute(select(Technician).where(Technician.employee_code == "TECH-001"))).scalar_one_or_none()
+    if not tech1:
+        tech1 = Technician(
             id=uuid.uuid4(),
-            job_number=j_data["job_number"],
-            customer_name=j_data["customer_name"],
-            customer_phone=j_data["customer_phone"],
-            address=j_data["address"],
-            latitude=j_data["latitude"],
-            longitude=j_data["longitude"],
-            required_skill_id=hvac_skill.id,
-            priority=j_data["priority"],
-            status=j_data["status"],
-            scheduled_time=now,
-            description=j_data["description"],
-            created_by=disp_user.id if disp_user else None,
+            user_id=tech_user.id,
+            employee_code="TECH-001",
+            primary_skill_id=first_skill_id,
+            current_latitude=37.7700,
+            current_longitude=-122.4200,
+            availability_status="AVAILABLE",
+            years_experience=5,
+            created_at=now,
+            updated_at=now,
         )
-        session.add(j_obj)
-    await session.flush()
+        session.add(tech1)
+        await session.flush()
+    elif not tech1.primary_skill_id and first_skill_id:
+        tech1.primary_skill_id = first_skill_id
+
+    tech2 = (await session.execute(select(Technician).where(Technician.employee_code == "TECH-002"))).scalar_one_or_none()
+    if not tech2:
+        tech2_user = (await session.execute(select(User).where(User.email == "tech2@fieldops.ai"))).scalar_one_or_none()
+        if not tech2_user:
+            tech2_user = User(
+                id=uuid.uuid4(),
+                role_id=tech_user.role_id,
+                email="tech2@fieldops.ai",
+                full_name="Marcus Vance",
+                password_hash=tech_user.password_hash,
+                status=UserStatus.ACTIVE,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(tech2_user)
+            await session.flush()
+
+        tech2 = Technician(
+            id=uuid.uuid4(),
+            user_id=tech2_user.id,
+            employee_code="TECH-002",
+            primary_skill_id=first_skill_id,
+            current_latitude=37.7749,
+            current_longitude=-122.4194,
+            availability_status="AVAILABLE",
+            years_experience=7,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(tech2)
+        await session.flush()
+    elif not tech2.primary_skill_id and first_skill_id:
+        tech2.primary_skill_id = first_skill_id
+
+    # 2. Ensure JOB-10001 and JOB-10002 exist
+    job1 = (await session.execute(select(Job).where(Job.job_number == "JOB-10001"))).scalar_one_or_none()
+    if not job1:
+        job1 = Job(
+            id=uuid.uuid4(),
+            job_number="JOB-10001",
+            customer_name="Bay Area Power Grid",
+            customer_phone="+1-555-0101",
+            address="100 Mission St, San Francisco, CA",
+            latitude=37.7600,
+            longitude=-122.4190,
+            priority=Priority.HIGH,
+            status=JobStatus.ASSIGNED,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(job1)
+        await session.flush()
+
+    job2 = (await session.execute(select(Job).where(Job.job_number == "JOB-10002"))).scalar_one_or_none()
+    if not job2:
+        job2 = Job(
+            id=uuid.uuid4(),
+            job_number="JOB-10002",
+            customer_name="Apex Telecommunications Grid",
+            customer_phone="+1-555-0102",
+            address="500 Market St, San Francisco, CA",
+            latitude=37.7833,
+            longitude=-122.4167,
+            priority=Priority.CRITICAL,
+            status=JobStatus.ASSIGNED,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(job2)
+        await session.flush()
+
+    # 3. Ensure assignments exist
+    asg1 = (await session.execute(select(Assignment).where(Assignment.job_id == job1.id))).scalar_one_or_none()
+    if not asg1:
+        asg1 = Assignment(
+            id=uuid.uuid4(),
+            job_id=job1.id,
+            technician_id=tech1.id,
+            assignment_status="ASSIGNED",
+            assigned_at=now,
+        )
+        session.add(asg1)
+
+    asg2 = (await session.execute(select(Assignment).where(Assignment.job_id == job2.id))).scalar_one_or_none()
+    if not asg2:
+        asg2 = Assignment(
+            id=uuid.uuid4(),
+            job_id=job2.id,
+            technician_id=tech2.id,
+            assignment_status="ASSIGNED",
+            assigned_at=now,
+        )
+        session.add(asg2)
 
 
 import app.models  # Ensure all ORM models are registered
@@ -267,7 +308,10 @@ from app.database.session import AsyncSessionLocal, engine
 
 
 async def seed_db() -> None:
-    """Master idempotent database seed runner."""
+    """Master idempotent database seed runner.
+    Initializes only system-level baseline configuration (tables, roles, baseline accounts, skills taxonomy).
+    Operational records (technicians, jobs, assignments) must NEVER be auto-created on startup.
+    """
     logger.info("seed_db_start")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -276,7 +320,7 @@ async def seed_db() -> None:
         try:
             roles_map = await seed_roles(session)
             await seed_users(session, roles_map)
-            await seed_jobs(session)
+            # ZERO operational records created automatically.
             await session.commit()
             logger.info("seed_db_success")
         except Exception as err:

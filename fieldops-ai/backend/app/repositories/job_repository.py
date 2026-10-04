@@ -281,10 +281,27 @@ class JobRepository:
         new_status: str,
         actor_id: Optional[uuid.UUID] = None,
     ) -> Job:
-        """Update job status and write AuditLog."""
+        """Update job status, synchronize technician availability on completion, and write AuditLog."""
         async def _execute_status(db: AsyncSession):
             job_obj.status = JobStatus(new_status)
             db.add(job_obj)
+
+            # If job completed, set assigned technician's availability back to AVAILABLE
+            if new_status == JobStatus.COMPLETED.value or new_status == "COMPLETED":
+                asg_stmt = (
+                    select(Assignment)
+                    .options(selectinload(Assignment.technician))
+                    .where(
+                        Assignment.job_id == job_obj.id,
+                        Assignment.assignment_status != "UNASSIGNED",
+                    )
+                )
+                asg_res = await db.execute(asg_stmt)
+                active_asg = asg_res.scalar_one_or_none()
+                if active_asg and active_asg.technician:
+                    tech = active_asg.technician
+                    tech.availability_status = "AVAILABLE"
+                    db.add(tech)
 
             audit = AuditLog(
                 id=uuid.uuid4(),
@@ -312,11 +329,29 @@ class JobRepository:
         reason: str,
         actor_id: Optional[uuid.UUID] = None,
     ) -> Job:
-        """Cancel job and write AuditLog with cancellation reason."""
+        """Cancel job, unassign active assignments, restore technician availability, and write AuditLog."""
         async def _execute_cancel(db: AsyncSession):
             old_status = str(job_obj.status)
             job_obj.status = JobStatus.CANCELLED
             db.add(job_obj)
+
+            # Revert any active assignment for this job and restore technician availability
+            asg_stmt = (
+                select(Assignment)
+                .options(selectinload(Assignment.technician))
+                .where(
+                    Assignment.job_id == job_obj.id,
+                    Assignment.assignment_status != "UNASSIGNED",
+                )
+            )
+            asg_res = await db.execute(asg_stmt)
+            active_asgs = asg_res.scalars().all()
+            for asg in active_asgs:
+                asg.assignment_status = "UNASSIGNED"
+                db.add(asg)
+                if asg.technician:
+                    asg.technician.availability_status = "AVAILABLE"
+                    db.add(asg.technician)
 
             audit = AuditLog(
                 id=uuid.uuid4(),

@@ -1,0 +1,122 @@
+name: FieldOps AI — Automated Continuous Integration (CI)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-checks:
+    name: Backend Test Suite & Lint
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password123
+          POSTGRES_DB: fieldops_ai_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install scikit-learn joblib numpy
+
+      - name: Execute Alembic Migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:password123@localhost:5432/fieldops_ai_test
+          APP_ENV: testing
+          SECRET_KEY: test-secret-key-12345
+        run: |
+          alembic upgrade head
+
+      - name: Run Backend Pytest Suite
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:password123@localhost:5432/fieldops_ai_test
+          APP_ENV: testing
+          SECRET_KEY: test-secret-key-12345
+          TRAFFIC_PROVIDER: none
+        run: |
+          pytest -v --maxfail=5
+
+      - name: Verify ML Training Pipeline & Artifact Integrity
+        working-directory: backend
+        run: |
+          python -m app.ml.train_eta_model
+          test -f app/ml/context_eta_model.joblib
+
+  frontend-checks:
+    name: Frontend TypeScript & Production Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: TypeScript Type Checking (tsc)
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Build Production Distribution
+        working-directory: frontend
+        run: npm run build
+
+  benchmark-verification:
+    name: ETA Regression Benchmark Verification
+    runs-on: ubuntu-latest
+    needs: [backend-checks, frontend-checks]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Minimal Evaluation Requirements
+        run: pip install numpy
+
+      - name: Execute Benchmark Pipeline
+        run: |
+          python scripts/run_eta_benchmark.py
+          test -f docs/ETA_REGRESSION_MAE_ARTIFACT.md

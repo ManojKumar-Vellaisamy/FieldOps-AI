@@ -65,10 +65,25 @@ export interface Recommendation {
 export interface WeatherData {
   condition: string;
   temperature: string;
+  temperature_c?: number | null | undefined;
+  apparentTemperature?: string | undefined;
+  apparentTemperature_c?: number | null | undefined;
   location: string;
+  latitude?: number | null | undefined;
+  longitude?: number | null | undefined;
   impact: string;
-  etaImpact?: string;
+  etaImpact?: string | undefined;
   impactSeverity: 'low' | 'moderate' | 'high';
   windSpeed: string;
+  windSpeed_kmh?: number | null | undefined;
+  windDirection?: string | undefined;
+  windDirectionDeg?: number | null | undefined;
   humidity: string;
+  humidityPercent?: number | null | undefined;
+  precipitation: string;
+  precipitation_mm?: number | null | undefined;
+  precipitationProbability?: string | null | undefined;
+  precipitationProbabilityPercent?: number | null | undefined;
+  observedAt?: string | null | undefined;
+  provenance?: string | undefined;
 }

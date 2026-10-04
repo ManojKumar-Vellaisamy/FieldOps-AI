@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, status
 
 from app.api.deps import get_current_user, require_roles
 from app.models.user import UserRole
-from app.schemas.auth import LoginRequest, TokenResponse, UserResponse
+from app.schemas.auth import ChangePasswordRequest, LoginRequest, TokenResponse, UpdateProfileRequest, UserResponse
 from app.services.auth_service import AuthService
 
 router = APIRouter(tags=["Authentication"])
@@ -39,6 +39,21 @@ async def get_me(current_user: UserResponse = Depends(get_current_user)) -> User
     return current_user
 
 
+@router.patch(
+    "/me",
+    response_model=UserResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update authenticated user profile",
+)
+async def update_me(
+    payload: UpdateProfileRequest,
+    current_user: UserResponse = Depends(get_current_user),
+) -> UserResponse:
+    """Update current authenticated user's profile details (full_name, phone)."""
+    auth_service = AuthService()
+    return await auth_service.update_profile(current_user.id, payload)
+
+
 @router.post(
     "/logout",
     status_code=status.HTTP_200_OK,
@@ -50,6 +65,23 @@ async def logout(current_user: UserResponse = Depends(get_current_user)) -> dict
     Confirms token invalidation on client side.
     """
     return {"message": "Successfully logged out."}
+
+
+@router.post(
+    "/change-password",
+    status_code=status.HTTP_200_OK,
+    summary="Change password for current authenticated user",
+)
+async def change_password(
+    payload: ChangePasswordRequest,
+    current_user: UserResponse = Depends(get_current_user),
+) -> dict[str, str]:
+    """
+    Allow any authenticated user to update their account password.
+    Requires current password verification and clears first-login must_change_password flag.
+    """
+    auth_service = AuthService()
+    return await auth_service.change_password(current_user.id, payload)
 
 
 @router.get(
@@ -66,3 +98,4 @@ async def protected_example(current_user: UserResponse = Depends(get_current_use
     return {
         "message": f"Access granted to {current_user.full_name} with role '{current_user.role.value}'.",
     }
+
